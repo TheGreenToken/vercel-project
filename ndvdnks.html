@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<meta name="robots" content="noindex,nofollow,noarchive">
+<title>AntiSec — Admin</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--red:#e8000f;--bg:#000;--bg2:#030303;--bg3:#060606;--border:#111;--muted:#1e1e1e;--text:#888;--white:#d0d0d0}
+body{background:var(--bg);color:var(--white);font-family:'Segoe UI',system-ui,sans-serif;font-size:14px;min-height:100vh}
+#loginWrap{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px}
+#loginBox{width:min(360px,100%);border:1px solid var(--border);border-top:2px solid var(--red);background:var(--bg2);padding:36px 32px}
+.logo{font-size:1.6rem;font-weight:700;letter-spacing:-0.01em;margin-bottom:4px}
+.logo span{color:var(--red)}
+.eyebrow{font-size:0.65rem;letter-spacing:0.3em;color:var(--muted);text-transform:uppercase;margin-bottom:24px}
+.field{border:1px solid var(--border);display:flex;align-items:center;margin-bottom:12px}
+.field input{flex:1;background:transparent;border:none;outline:none;padding:12px 14px;color:var(--white);font-family:monospace;font-size:0.85rem}
+.field input::placeholder{color:var(--muted)}
+.btn{width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:12px;font-size:0.78rem;letter-spacing:0.2em;text-transform:uppercase;cursor:pointer;transition:border-color 0.2s,color 0.2s;font-family:monospace}
+.btn:hover{border-color:#333;color:var(--white)}
+.btn.red{border-color:rgba(232,0,15,0.3);color:var(--red)}
+.btn.red:hover{border-color:var(--red);background:rgba(232,0,15,0.05)}
+.btn.sm{padding:5px 14px;font-size:0.65rem;width:auto}
+.err{color:var(--red);font-size:0.72rem;margin-top:10px;min-height:16px;font-family:monospace}
+
+#dashWrap{display:none;padding:0;min-height:100vh}
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:14px 24px;border-bottom:1px solid var(--border);background:var(--bg2);position:sticky;top:0;z-index:100}
+.topbar-logo{font-weight:700;font-size:1.1rem}
+.topbar-logo span{color:var(--red)}
+.topbar-right{display:flex;align-items:center;gap:12px}
+.badge{font-family:monospace;font-size:0.6rem;letter-spacing:0.15em;padding:3px 10px;border:1px solid var(--muted);color:var(--muted);text-transform:uppercase}
+.badge.green{border-color:#1a3a00;color:#2a6600}
+.badge.red{border-color:#3a0002;color:var(--red)}
+
+.content{padding:24px;max-width:1100px;margin:0 auto}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1px;border:1px solid var(--border);margin-bottom:24px}
+.stat{background:var(--bg2);padding:20px 18px;border:none}
+.stat-val{font-size:2rem;font-weight:700;color:var(--white);line-height:1;margin-bottom:4px}
+.stat-lbl{font-size:0.62rem;letter-spacing:0.2em;color:var(--muted);text-transform:uppercase}
+
+.section{margin-bottom:28px}
+.section-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+.section-title{font-size:0.68rem;letter-spacing:0.25em;color:var(--text);text-transform:uppercase}
+.section-actions{display:flex;gap:8px}
+
+table{width:100%;border-collapse:collapse}
+th{font-size:0.6rem;letter-spacing:0.2em;color:var(--muted);text-transform:uppercase;padding:8px 12px;text-align:left;border-bottom:1px solid var(--border);background:var(--bg2)}
+td{padding:9px 12px;border-bottom:1px solid #080808;font-family:monospace;font-size:0.75rem;color:var(--text);vertical-align:middle}
+tr:hover td{background:#040404}
+.id{color:#555;font-size:0.68rem}
+.reason-text{color:#444;font-size:0.68rem}
+.count-high{color:var(--red)}
+.env-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px}
+.env-item{background:var(--bg2);border:1px solid var(--border);padding:12px 14px;display:flex;align-items:center;justify-content:space-between}
+.env-key{font-family:monospace;font-size:0.68rem;color:var(--text)}
+.env-val{font-size:0.62rem;font-family:monospace}
+.env-val.ok{color:#2a6600}
+.env-val.missing{color:var(--red)}
+.empty{padding:20px 12px;font-family:monospace;font-size:0.68rem;color:var(--muted)}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--bg2);border:1px solid var(--border);color:var(--white);padding:10px 20px;font-family:monospace;font-size:0.72rem;z-index:9999;pointer-events:none;opacity:0;transition:opacity 0.2s}
+.toast.show{opacity:1}
+</style>
+</head>
+<body>
+
+<div id="loginWrap">
+  <div id="loginBox">
+    <div class="logo">Anti<span>Sec</span></div>
+    <div class="eyebrow">Admin Dashboard</div>
+    <div class="field">
+      <input type="password" id="adminPw" placeholder="Admin password" autocomplete="current-password" maxlength="256">
+    </div>
+    <button class="btn red" id="loginBtn">Enter</button>
+    <div class="err" id="loginErr"></div>
+  </div>
+</div>
+
+<div id="dashWrap">
+  <div class="topbar">
+    <div class="topbar-logo">Anti<span>Sec</span> <span style="color:#333;font-weight:400;font-size:0.8rem">/ admin</span></div>
+    <div class="topbar-right">
+      <span class="badge" id="sessionBadge">Session active</span>
+      <button class="btn sm" id="refreshBtn">↺ Refresh</button>
+      <button class="btn sm" id="logoutBtn">Logout</button>
+    </div>
+  </div>
+
+  <div class="content">
+
+    <div class="grid" id="statsGrid">
+      <div class="stat"><div class="stat-val" id="stActiveSessions">—</div><div class="stat-lbl">Active Sessions</div></div>
+      <div class="stat"><div class="stat-val" id="stCachedScans">—</div><div class="stat-lbl">Cached Scans</div></div>
+      <div class="stat"><div class="stat-val" id="stBlacklisted">—</div><div class="stat-lbl">Blacklisted Tokens</div></div>
+      <div class="stat"><div class="stat-val" id="stActiveFails">—</div><div class="stat-lbl">Active Fail Counters</div></div>
+      <div class="stat"><div class="stat-val" id="stRateLimits">—</div><div class="stat-lbl">Rate Limit Keys</div></div>
+    </div>
+
+    <div class="section">
+      <div class="section-head">
+        <div class="section-title">Environment</div>
+      </div>
+      <div class="env-grid" id="envGrid"></div>
+    </div>
+
+    <div class="section">
+      <div class="section-head">
+        <div class="section-title">Recent Scans (cached)</div>
+        <div class="section-actions">
+          <button class="btn sm" id="clearAllCacheBtn">Clear All Cache</button>
+        </div>
+      </div>
+      <table>
+        <thead><tr><th>Username</th><th>Emails</th><th>Repos</th><th>Action</th></tr></thead>
+        <tbody id="scansBody"></tbody>
+      </table>
+    </div>
+
+    <div class="section">
+      <div class="section-head">
+        <div class="section-title">Fail Counters</div>
+        <div class="section-actions"></div>
+      </div>
+      <table>
+        <thead><tr><th>Discord ID</th><th>Attempts</th><th>Action</th></tr></thead>
+        <tbody id="failsBody"></tbody>
+      </table>
+    </div>
+
+    <div class="section">
+      <div class="section-head">
+        <div class="section-title">Blacklisted Users (from env vars)</div>
+      </div>
+      <table>
+        <thead><tr><th>Discord ID</th><th>Reason</th><th>Env Key</th></tr></thead>
+        <tbody id="blacklistBody"></tbody>
+      </table>
+    </div>
+
+    <div class="section">
+      <div class="section-head">
+        <div class="section-title">Special Users (from env vars)</div>
+      </div>
+      <table>
+        <thead><tr><th>Discord ID</th><th>Env Key</th></tr></thead>
+        <tbody id="specialBody"></tbody>
+      </table>
+    </div>
+
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="/ndvdnks-client.js" defer></script>
+</body>
+</html>
