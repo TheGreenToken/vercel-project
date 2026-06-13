@@ -11,9 +11,9 @@ const ROLE_ID   = process.env.DISCORD_ROLE_ID;
 const BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
 const INVITE    = process.env.DISCORD_INVITE || "https://discord.gg/yourserver";
 
-const roleCache = new Map(); // userId → { hasRole, cachedAt }
-const ROLE_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
-const ROLE_CACHE_MAX = 500; // prevent unbounded memory growth
+const roleCache = new Map();
+const ROLE_CACHE_TTL = 30 * 1000;
+const ROLE_CACHE_MAX = 500;
 
 async function hasDiscordRole(userId) {
   const cached = roleCache.get(userId);
@@ -21,14 +21,14 @@ async function hasDiscordRole(userId) {
   if (!BOT_TOKEN || !GUILD_ID || !ROLE_ID) throw new Error("Discord env vars not configured");
   const res = await fetch(`https://discord.com/api/v10/guilds/${GUILD_ID}/members/${encodeURIComponent(userId)}`,
     { headers: { Authorization: `Bot ${BOT_TOKEN}`, "Content-Type": "application/json" } });
-  if (res.status === 404 || res.status === 403) { roleCache.set(userId, { hasRole: false, cachedAt: Date.now() }); return false; }
+  if (res.status === 404 || res.status === 403) {
+    roleCache.set(userId, { hasRole: false, cachedAt: Date.now() });
+    return false;
+  }
   if (!res.ok) throw new Error(`Discord API returned ${res.status}`);
   const data    = await res.json().catch(() => ({}));
   const hasRole = Array.isArray(data.roles) && data.roles.includes(ROLE_ID);
-  if (roleCache.size >= ROLE_CACHE_MAX) {
-    const oldest = roleCache.keys().next().value;
-    roleCache.delete(oldest);
-  }
+  if (roleCache.size >= ROLE_CACHE_MAX) { const oldest = roleCache.keys().next().value; roleCache.delete(oldest); }
   roleCache.set(userId, { hasRole, cachedAt: Date.now() });
   return hasRole;
 }
@@ -182,8 +182,27 @@ module.exports = async function handler(req, res) {
 
   let stillHasRole;
   try { stillHasRole = await hasDiscordRole(session.userId); }
-  catch (e) { console.error("Discord role check failed:", e.message); return res.status(502).json({ error: "Could not verify your Discord role. Try again shortly." }); }
-  if (!stillHasRole) return res.status(403).json({ error: `Access revoked — your role was removed. Re-join at ${INVITE}.` });
+  catch (e) { return res.status(502).json({ error: "Could not verify your Discord role. Try again shortly." }); }
+
+  if (!stillHasRole) {
+    const memberRes = await fetch(`https://discord.com/api/v10/guilds/${GUILD_ID}/members/${session.userId}`,
+      { headers: { Authorization: `Bot ${BOT_TOKEN}`, "Content-Type": "application/json" } }).catch(() => null);
+    if (memberRes && memberRes.status === 404)
+      return res.status(403).json({ error: `Access revoked — you left the server. Re-join at ${INVITE}.` });
+    if (memberRes && memberRes.ok) {
+      const md = await memberRes.json().catch(() => ({}));
+      const displayName = md.nick || md.user?.global_name || md.user?.username || "";
+      const TAG_SUFFIX = "ᵃⁿᵗⁱ", TAG_PREFIX = "𝐴𝐧𝐭𝐢|";
+      const hasTag = displayName.endsWith(TAG_SUFFIX) || displayName.startsWith(TAG_PREFIX);
+      if (hasTag) {
+        await fetch(`https://discord.com/api/v10/guilds/${GUILD_ID}/members/${session.userId}/roles/${ROLE_ID}`,
+          { method: "PUT", headers: { Authorization: `Bot ${BOT_TOKEN}`, "Content-Type": "application/json" } }).catch(() => {});
+        roleCache.delete(session.userId);
+      } else {
+        return res.status(403).json({ error: `Tag not found — add the tag back to your server nickname to regain access.`, tagRemoved: true });
+      }
+    }
+  }
 
   const username = sanitizeUsername(body.username);
   if (!username) return res.status(400).json({ error: "Invalid username" });
