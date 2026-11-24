@@ -142,7 +142,7 @@ module.exports = async function handler(req, res) {
   const cookies = parseCookies(req);
   const rawToken = cookies["mono_session"] || String(req.headers["x-session-token"] || "").trim();
   const session = verifySessionToken(rawToken);
-  if (!session.ok) return res.status(401).json({ error: "Login required" });
+  if (!session.ok) return res.status(401).json({ error: session.error || "Login required" });
   if (await isTokenBlacklisted(rawToken)) return res.status(401).json({ error: "Session revoked — please log in again" });
 
   let body;
