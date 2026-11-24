@@ -455,7 +455,7 @@
         if (res.status === 401) {
           setAuthToken('');
           setAuthUI(null);
-          throw new Error('Login required — please sign in with Discord.');
+          throw new Error(sanitize(data.error || 'Login required — please sign in with Discord.', 200));
         }
         throw new Error(sanitize(data.error || 'Unknown error', 200));
       }
