@@ -2,35 +2,74 @@
 
 const crypto = require("crypto");
 const kv     = require("./kv");
-const { envCheck, kvRateLimit, replayGuard, getCorsHeaders } = require("./middleware");
-const { createSessionToken } = require("./session");
+const { kvRateLimit, getCorsHeaders } = require("./middleware");
+const { createSessionToken, verifySessionToken, blacklistToken } = require("./session");
+const { upsertUserLogin, getUserByDiscordId, getDatabaseUrl } = require("./db");
 
-const KV_CONFIRMED = "antisec:confirmed:";
-const WINDOW_SECS  = 15 * 60;
-const MAX_IP       = 10;
+const SESSION_COOKIE = "mono_session";
+const STATE_TTL = 10 * 60; // 10 min
 
-const TAG_SUFFIX = "ᵃⁿᵗⁱ";
-const TAG_PREFIX = "𝐴𝐧𝐭𝐢|";
-
-function getSpecialUsers() {
-  const ids = new Set();
-  for (let i = 1; i <= 50; i++) {
-    const val = (process.env[`SPECIAL_USER${i}`] || "").trim();
-    if (val && /^\d{17,19}$/.test(val)) ids.add(val);
-  }
-  return ids;
+function getBaseUrl(req) {
+  const env = process.env.APP_BASE_URL;
+  if (env) return env.replace(/\/$/, "");
+  const proto = (req.headers["x-forwarded-proto"] || "https").split(",")[0].trim();
+  const host  = (req.headers["x-forwarded-host"] || req.headers["host"] || "").split(",")[0].trim();
+  return `${proto}://${host}`;
 }
 
-async function getDiscordProfile(userId) {
-  try {
-    const BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
-    const GUILD_ID  = process.env.DISCORD_GUILD_ID;
-    if (!BOT_TOKEN || !GUILD_ID) return {};
-    const r = await fetch(`https://discord.com/api/v10/guilds/${GUILD_ID}/members/${userId}`,
-      { headers: { Authorization: `Bot ${BOT_TOKEN}`, "Content-Type": "application/json" } });
-    if (!r.ok) return {};
-    return await r.json().catch(() => ({}));
-  } catch { return {}; }
+function parseCookies(req) {
+  const raw = String(req.headers["cookie"] || "");
+  const out = {};
+  raw.split(/;\s*/).forEach(part => {
+    const idx = part.indexOf("=");
+    if (idx > 0) out[part.slice(0, idx).trim()] = decodeURIComponent(part.slice(idx + 1).trim());
+  });
+  return out;
+}
+
+function setCookie(res, name, value, opts = {}) {
+  const parts = [`${name}=${encodeURIComponent(value)}`];
+  if (opts.maxAge !== undefined) parts.push(`Max-Age=${opts.maxAge}`);
+  parts.push(`Path=${opts.path || "/"}`);
+  if (opts.httpOnly) parts.push("HttpOnly");
+  if (opts.secure !== false) parts.push("Secure");
+  parts.push(`SameSite=${opts.sameSite || "Lax"}`);
+  res.setHeader("Set-Cookie", parts.join("; "));
+}
+
+function clearCookie(res, name) {
+  setCookie(res, name, "", { maxAge: 0, httpOnly: true, sameSite: "Lax" });
+}
+
+function json(res, status, body) {
+  res.statusCode = status;
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
+  res.end(JSON.stringify(body));
+}
+
+function getSession(req) {
+  const cookies = parseCookies(req);
+  const token = cookies[SESSION_COOKIE] || String(req.headers["x-session-token"] || "").trim();
+  if (!token) return { ok: false };
+  const session = verifySessionToken(token);
+  if (!session.ok) return { ok: false };
+  return { ...session, token };
+}
+
+async function getDiscordUser(accessToken) {
+  const r = await fetch("https://discord.com/api/v10/users/@me", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!r.ok) throw new Error("Discord user fetch failed");
+  return r.json();
+}
+
+function avatarUrl(user) {
+  if (user.avatar) return `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png?size=128`;
+  const idx = user.discriminator && user.discriminator !== "0"
+    ? Number(user.discriminator) % 5
+    : Number((BigInt(user.id) >> 22n) % 6n);
+  return `https://cdn.discordapp.com/embed/avatars/${idx}.png`;
 }
 
 module.exports = async function handler(req, res) {
@@ -38,98 +77,199 @@ module.exports = async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
 
   if (req.method === "OPTIONS") return res.status(204).end();
-  if (req.method !== "POST")    return res.status(405).json({ ok: false, error: "Method Not Allowed" });
 
-  const envErr = envCheck();
-  if (envErr) return res.status(500).json({ ok: false, error: "Server misconfiguration." });
+  const url = new URL(req.url, getBaseUrl(req));
+  const action = String(req.query.action || url.searchParams.get("action") || "").trim();
 
-  const replayErr = replayGuard(req);
-  if (replayErr) return res.status(400).json({ ok: false, error: replayErr });
-
-  const ip = (req.headers["x-forwarded-for"] || req.headers["x-real-ip"] || "unknown").split(",")[0].trim();
-  if (await kvRateLimit(`rl:auth:${ip}`, MAX_IP, WINDOW_SECS))
-    return res.status(429).json({ ok: false, error: "Too many requests. Try again later." });
-
-  let payload;
-  try {
-    const chunks = []; for await (const chunk of req) chunks.push(chunk);
-    const raw = Buffer.concat(chunks).toString();
-    if (raw.length > 512) return res.status(400).json({ ok: false, error: "Request too large" });
-    payload = JSON.parse(raw || "{}");
-  } catch { return res.status(400).json({ ok: false, error: "Invalid JSON" }); }
-
-  if (typeof payload !== "object" || payload === null || Array.isArray(payload))
-    return res.status(400).json({ ok: false, error: "Invalid request format" });
-
-  const allowed = new Set(["userId"]);
-  if (Object.keys(payload).some((k) => !allowed.has(k)))
-    return res.status(400).json({ ok: false, error: "Unexpected fields in request" });
-
-  const uid = String(payload.userId || "").trim();
-  if (!uid || !/^\d{17,19}$/.test(uid))
-    return res.status(401).json({ ok: false, error: "Missing or invalid Discord User ID" });
-
-  let kvEntry;
-  try {
-    kvEntry = await kv.get(`${KV_CONFIRMED}${uid}`);
-  } catch (e) {
-    return res.status(500).json({ ok: false, error: "Verification check failed. Please try again." });
+  const ip = (req.headers["x-forwarded-for"] || req.headers["x-real-ip"] || "unknown").split(",")[0].trim().slice(0, 45);
+  const rlKey = `rl:auth:${action || "unknown"}:${ip}`;
+  const rlLimit = action === "callback" ? 30 : 60;
+  if (await kvRateLimit(rlKey, rlLimit, 60)) {
+    return json(res, 429, { error: "Too many requests. Try again later." });
   }
 
-  if (!kvEntry || typeof kvEntry !== "object") {
-    const INVITE = process.env.DISCORD_INVITE;
-    return res.status(403).json({ ok: false, error: `You haven't confirmed your identity yet. Please click the DM link first.` });
+  // ---- LOGIN ----
+  if (action === "login") {
+    if (req.method !== "GET") return json(res, 405, { error: "Method Not Allowed" });
+    const clientId = process.env.DISCORD_CLIENT_ID;
+    const baseUrl  = getBaseUrl(req);
+    const redirectUri = `${baseUrl}/api/auth/callback`;
+    if (!clientId) {
+      const baseUrl = getBaseUrl(req);
+      res.statusCode = 302;
+      res.setHeader("Location", `${baseUrl}/?auth_error=server_config`);
+      return res.end();
+    }
+
+    const state = crypto.randomBytes(16).toString("hex");
+    await kv.set(`mono:oauth_state:${state}`, { createdAt: Date.now() }, STATE_TTL);
+
+    const params = new URLSearchParams({
+      client_id: clientId,
+      redirect_uri: redirectUri,
+      response_type: "code",
+      scope: "identify email",
+      state,
+      prompt: "consent",
+    });
+    res.statusCode = 302;
+    res.setHeader("Location", `https://discord.com/oauth2/authorize?${params.toString()}`);
+    return res.end();
   }
 
-  const confirmedUntil = Number(kvEntry.confirmedUntil) || 0;
-  if (Date.now() > confirmedUntil) {
-    const INVITE = process.env.DISCORD_INVITE;
-    return res.status(403).json({ ok: false, error: `Confirmation expired. Please verify again.` });
-  }
+  // ---- CALLBACK ----
+  if (action === "callback") {
+    if (req.method !== "GET") return json(res, 405, { error: "Method Not Allowed" });
+    const baseUrl = getBaseUrl(req);
+    const code  = String(req.query.code || "").trim();
+    const state = String(req.query.state || "").trim();
+    const err   = String(req.query.error || "").trim();
 
-  if (!getSpecialUsers().has(uid)) {
-    const GUILD_ID  = process.env.DISCORD_GUILD_ID;
-    const BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
-    const ROLE_ID   = process.env.DISCORD_ROLE_ID;
-    if (GUILD_ID && BOT_TOKEN && ROLE_ID) {
-      const memberData = await getDiscordProfile(uid);
-      if (memberData && typeof memberData === "object") {
-        const displayName = memberData.nick || memberData.user?.global_name || memberData.user?.username || "";
-        const hasTag = displayName.endsWith(TAG_SUFFIX) || displayName.startsWith(TAG_PREFIX);
-        if (!hasTag) {
-          await fetch(`https://discord.com/api/v10/guilds/${GUILD_ID}/members/${uid}/roles/${ROLE_ID}`,
-            { method: "DELETE", headers: { Authorization: `Bot ${BOT_TOKEN}`, "Content-Type": "application/json" } }).catch(() => {});
-          return res.status(403).json({ ok: false, error: `Tag not found — add ${TAG_SUFFIX} to your server nickname.`, requirement: "tag" });
-        }
+    if (err) {
+      res.statusCode = 302;
+      res.setHeader("Location", `${baseUrl}/?auth_error=${encodeURIComponent(err)}`);
+      return res.end();
+    }
+    if (!code || !/^[a-zA-Z0-9_-]+$/.test(code) || !state || !/^[a-f0-9]{32}$/.test(state)) {
+      res.statusCode = 302;
+      res.setHeader("Location", `${baseUrl}/?auth_error=invalid_callback`);
+      return res.end();
+    }
+
+    const stateEntry = await kv.get(`mono:oauth_state:${state}`).catch(() => null);
+    await kv.del(`mono:oauth_state:${state}`).catch(() => {});
+    if (!stateEntry) {
+      res.statusCode = 302;
+      res.setHeader("Location", `${baseUrl}/?auth_error=invalid_state`);
+      return res.end();
+    }
+
+    const clientId     = process.env.DISCORD_CLIENT_ID;
+    const clientSecret = process.env.DISCORD_CLIENT_SECRET;
+    const redirectUri  = `${baseUrl}/api/auth/callback`;
+    if (!clientId || !clientSecret) {
+      res.statusCode = 302;
+      res.setHeader("Location", `${baseUrl}/?auth_error=server_config`);
+      return res.end();
+    }
+
+    try {
+      const tokenRes = await fetch("https://discord.com/api/v10/oauth2/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          client_id: clientId,
+          client_secret: clientSecret,
+          grant_type: "authorization_code",
+          code,
+          redirect_uri: redirectUri,
+        }),
+      });
+      const tokenData = await tokenRes.json().catch(() => ({}));
+      if (!tokenRes.ok || !tokenData.access_token) {
+        res.statusCode = 302;
+        res.setHeader("Location", `${baseUrl}/?auth_error=token_exchange_failed`);
+        return res.end();
       }
+
+      const user = await getDiscordUser(tokenData.access_token);
+      if (!user || !/^\d{17,19}$/.test(String(user.id || ""))) {
+        res.statusCode = 302;
+        res.setHeader("Location", `${baseUrl}/?auth_error=user_fetch_failed`);
+        return res.end();
+      }
+
+      const ip = (req.headers["x-forwarded-for"] || req.headers["x-real-ip"] || "unknown").split(",")[0].trim().slice(0, 45);
+      const email = typeof user.email === "string" ? user.email.trim().toLowerCase().slice(0, 254) : "";
+      const now = new Date().toISOString();
+
+      const profile = {
+        id: String(user.id),
+        username: String(user.global_name || user.username || "Unknown").slice(0, 100),
+        handle: String(user.username || "").slice(0, 100),
+        avatar: avatarUrl(user),
+        email,
+      };
+
+      await kv.set(`mono:user:${profile.id}`, profile, 30 * 24 * 60 * 60);
+
+      // Persist login record in Neon database
+      if (getDatabaseUrl()) {
+        try {
+          await upsertUserLogin({
+            discordId: profile.id,
+            email,
+            username: profile.username,
+            handle: profile.handle,
+            avatar: profile.avatar,
+            ip,
+          });
+        } catch (dbErr) {
+          console.error("[mono] Failed to persist login to Neon:", dbErr?.message || dbErr);
+        }
+      } else {
+        console.error("[mono] DATABASE_URL not configured - login not persisted to Neon");
+      }
+
+      const sessionToken = createSessionToken(profile.id);
+      setCookie(res, SESSION_COOKIE, sessionToken, { httpOnly: true, sameSite: "Lax", maxAge: 30 * 24 * 60 * 60, secure: true });
+
+      res.statusCode = 302;
+      res.setHeader("Location", `${baseUrl}/?auth=ok`);
+      return res.end();
+    } catch (e) {
+      res.statusCode = 302;
+      res.setHeader("Location", `${baseUrl}/?auth_error=callback_failed`);
+      return res.end();
     }
   }
 
-  await kv.del(`${KV_CONFIRMED}${uid}`).catch(() => {});
+  // ---- ME ----
+  if (action === "me") {
+    if (req.method !== "GET") return json(res, 405, { error: "Method Not Allowed" });
+    const session = getSession(req);
+    if (!session.ok) return json(res, 200, { authenticated: false });
 
-  const safeIp = ip.replace(/[^a-fA-F0-9.:]/g, "").slice(0, 45);
-  const ts     = new Date().toISOString();
-  const token  = createSessionToken(uid);
-
-  const WEBHOOK_URL = process.env.WEBHOOK_URL;
-  if (WEBHOOK_URL) {
-    try {
-      const pu = new URL(WEBHOOK_URL);
-      if (pu.protocol === "https:" && (pu.hostname.endsWith("discord.com") || pu.hostname.endsWith("discordapp.com"))) {
-        const profile = await getDiscordProfile(uid);
-        const name    = profile?.nick || profile?.user?.global_name || profile?.user?.username || uid;
-        await fetch(WEBHOOK_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
-          username: "AntiSec Auth",
-          embeds: [{ title: "✅ Successful Login", color: 0x2a6600,
-            fields: [
-              { name: "Discord", value: `${name} (\`${uid}\`)`, inline: true },
-              { name: "IP",      value: `||${safeIp}||`,         inline: true },
-              { name: "Time",    value: ts,                       inline: false },
-            ], timestamp: ts }]
-        }) });
+    let profile = await kv.get(`mono:user:${session.userId}`).catch(() => null);
+    if (!profile || typeof profile !== "object") {
+      if (getDatabaseUrl()) {
+        const dbUser = await getUserByDiscordId(session.userId).catch(() => null);
+        if (dbUser) {
+          profile = {
+            id: String(dbUser.discord_id),
+            username: String(dbUser.username || "Discord User"),
+            handle: String(dbUser.handle || ""),
+            avatar: String(dbUser.avatar || ""),
+            email: String(dbUser.email || ""),
+          };
+        }
       }
-    } catch (_) {}
+    }
+    if (!profile || typeof profile !== "object") {
+      profile = { id: session.userId, username: "Discord User", handle: "", avatar: "https://cdn.discordapp.com/embed/avatars/0.png", email: "" };
+    }
+    return json(res, 200, {
+      authenticated: true,
+      user: {
+        id: String(profile.id || session.userId),
+        username: String(profile.username || "Discord User").slice(0, 100),
+        handle: String(profile.handle || "").slice(0, 100),
+        avatar: typeof profile.avatar === "string" && profile.avatar.startsWith("https://cdn.discordapp.com/") ? profile.avatar : "https://cdn.discordapp.com/embed/avatars/0.png",
+        email: typeof profile.email === "string" ? profile.email.slice(0, 254) : "",
+      },
+    });
   }
 
-  return res.status(200).json({ ok: true, token });
+  // ---- LOGOUT ----
+  if (action === "logout") {
+    if (req.method !== "POST") return json(res, 405, { error: "Method Not Allowed" });
+    const session = getSession(req);
+    if (session.ok) {
+      await blacklistToken(session.token, session.expiresAt).catch(() => {});
+    }
+    clearCookie(res, SESSION_COOKIE);
+    return json(res, 200, { ok: true });
+  }
+
+  return json(res, 404, { error: "Not found" });
 };

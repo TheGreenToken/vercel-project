@@ -1,18 +1,11 @@
 (function () {
   'use strict';
 
-  const KEY_TOKEN    = 'antisec_auth_token';
-  const KEY_UID      = 'antisec_discord_uid';
-  const KEY_FAILS    = 'antisec_fails';
-  const KEY_LOCK     = 'antisec_lock';
-  const KEY_HISTORY  = 'antisec_scan_history';
+  const KEY_HISTORY  = 'mono_scan_history';
   const HISTORY_MAX  = 10;
-  const MAX_FAILS    = 5;
-  const LOCK_MS      = 15 * 60 * 1000;
   const USERNAME_RE  = /^[a-zA-Z0-9-]{1,39}$/;
-  const AVATAR_RE    = /^https:\/\/avatars\.githubusercontent\.com\//;
+  const AVATAR_RE    = /^https:\/\/(avatars\.githubusercontent\.com|cdn\.discordapp\.com)\//;
   const CTRL_RE      = /[^\x20-\x7E]/g;
-  const DISCORD_ID_RE = /^\d{17,19}$/;
 
   function sanitize(str, max) {
     if (str === null || str === undefined) return '';
@@ -26,8 +19,8 @@
   }
 
   function safeAvatar(url) {
-    if (!url || !AVATAR_RE.test(url)) return '';
-    return url;
+    if (!url || !AVATAR_RE.test(String(url))) return '';
+    return String(url);
   }
 
   function loadHistory() {
@@ -140,291 +133,65 @@
     if (el) el.style.display = 'none';
   }
 
-  let failCount    = parseInt(localStorage.getItem(KEY_FAILS) || '0', 10);
-  let lockUntil    = parseInt(localStorage.getItem(KEY_LOCK)  || '0', 10);
-  let lockTimer    = null;
-  let pendingUid   = localStorage.getItem(KEY_UID) || null;
+
   let scanResult   = null;
   let activeFilter = 'all';
   let scanDepth    = 'normal';
   let sortCol      = 'count';
   let sortDir      = 'desc';
   let forcedRescan = false;
+  let currentUser  = null;
 
-  function getToken() {
-    return localStorage.getItem(KEY_TOKEN) || null;
-  }
-
-  function isLoggedIn() {
-    const t = getToken();
-    if (!t) return false;
-    try {
-      const decoded   = atob(t.replace(/-/g, '+').replace(/_/g, '/'));
-      const lastPipe  = decoded.lastIndexOf('|');
-      const payload   = decoded.slice(0, lastPipe);
-      const parts     = payload.split('|');
-      if (parts.length !== 3) return false;
-      const expiresAt = parseInt(parts[1], 10);
-      if (Date.now() > expiresAt) { localStorage.removeItem(KEY_TOKEN); return false; }
-    } catch { return false; }
-    return true;
-  }
-
-  function showAuthError(msg, showRetry) {
-    const el = document.getElementById('authError');
-    if (!el) return;
-    el.innerHTML = '';
-    const text = document.createElement('div');
-    text.textContent = sanitize(msg, 300);
-    el.appendChild(text);
-    if (showRetry) {
-      const btn = document.createElement('button');
-      btn.textContent = '↺ Try Again';
-      btn.style.cssText = 'margin-top:10px;background:transparent;border:1px solid #2a0003;color:#e8000f;font-family:Share Tech Mono,monospace;font-size:0.58rem;letter-spacing:0.15em;padding:6px 14px;cursor:pointer;width:100%;';
-      btn.addEventListener('click', function () { goStep(1); });
-      el.appendChild(btn);
-    }
-    el.classList.add('show');
-    el.style.animation = 'none';
-    void el.offsetWidth;
-    el.style.animation = 'shake 0.4s ease';
-  }
-
-  function clearAuthError() {
-    hide('authError');
-  }
-
-  function showSuspended() {
-    hideEl('step1'); hideEl('step2'); hideEl('step3');
-    const steps = document.getElementById('authSteps');
-    if (steps) steps.style.display = 'none';
-    const box = document.getElementById('suspendedBox');
-    if (box) { box.style.display = ''; }
-  }
-
-  function updateLockLabel() {
-    const el = document.getElementById('attemptsLabel');
-    if (!el) return;
-    const remaining = MAX_FAILS - failCount;
-    if (remaining <= 0) {
-      const secs = Math.max(0, Math.ceil((lockUntil - Date.now()) / 1000));
-      el.textContent = '// System locked — retry in ' + secs + 's';
-    } else if (failCount > 0) {
-      el.textContent = '// ' + remaining + ' attempt' + (remaining !== 1 ? 's' : '') + ' remaining';
+  function setAuthUI(user) {
+    currentUser = user || null;
+    const loginBtn  = document.getElementById('loginBtn');
+    const userWrap  = document.getElementById('authUser');
+    const avatar    = document.getElementById('authAvatar');
+    const nameEl    = document.getElementById('authName');
+    if (user) {
+      if (loginBtn) loginBtn.hidden = true;
+      if (userWrap) userWrap.classList.add('visible');
+      if (avatar) { const src = safeAvatar(user.avatar); if (src) avatar.src = src; else avatar.removeAttribute("src"); avatar.alt = ""; }
+      if (nameEl) nameEl.textContent = sanitize(user.username || user.handle || 'User', 100);
     } else {
-      el.textContent = '';
+      if (loginBtn) loginBtn.hidden = false;
+      if (userWrap) userWrap.classList.remove('visible');
+      if (avatar) avatar.removeAttribute('src');
+      if (nameEl) nameEl.textContent = '';
     }
   }
 
-  let countdownTimer = null;
-
-  function startConfirmCountdown() {
-    const el = document.getElementById('confirmCountdown');
-    if (!el) return;
-    let secs = 10 * 60;
-    if (countdownTimer) clearInterval(countdownTimer);
-    function tick() {
-      const m = Math.floor(secs / 60);
-      const s = secs % 60;
-      el.textContent = '// link expires in ' + m + ':' + String(s).padStart(2, '0');
-      if (secs <= 0) {
-        clearInterval(countdownTimer);
-        el.textContent = '// link expired — please resend';
-        el.style.color = '#e8000f';
-        const resend = document.getElementById('resendBtn');
-        if (resend) { resend.style.opacity = '1'; resend.style.borderColor = 'rgba(232,0,15,0.4)'; resend.style.color = '#e8000f'; }
-      }
-      secs--;
-    }
-    tick();
-    countdownTimer = setInterval(tick, 1000);
-  }
-
-  function stopConfirmCountdown() {
-    if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null; }
-  }
-
-  function updateStepDots(n) {
-    for (let i = 1; i <= 2; i++) {
-      const dot  = document.getElementById('stepDot' + i);
-      const line = document.getElementById('stepLine' + i);
-      if (dot) {
-        dot.classList.remove('active', 'done');
-        if (i < n)   dot.classList.add('done');
-        if (i === n) dot.classList.add('active');
-        const lbl = dot.parentElement?.querySelector('.auth-step-label');
-        if (lbl) lbl.style.color = i === n ? 'rgba(232,0,15,0.55)' : '';
-      }
-      if (line) line.classList.toggle('done', i < n);
-    }
-  }
-
-  function slideToStep(n) {
-    const ids    = ['step1','step2','step3'];
-    const current = ids.map(id => document.getElementById(id)).find(el => el && el.style.display !== 'none' && el.style.display !== '');
-    const next   = document.getElementById('step' + n);
-    if (!next) return;
-    if (current && current !== next && current.style.display !== 'none') {
-      current.style.transition = 'opacity 0.18s ease, transform 0.18s ease';
-      current.style.opacity    = '0';
-      current.style.transform  = 'translateX(-10px)';
-      setTimeout(function () {
-        current.style.display    = 'none';
-        current.style.transition = '';
-        current.style.opacity    = '';
-        current.style.transform  = '';
-        next.style.display       = '';
-        next.style.opacity       = '0';
-        next.style.transform     = 'translateX(10px)';
-        requestAnimationFrame(function () {
-          next.style.transition  = 'opacity 0.22s ease, transform 0.22s ease';
-          next.style.opacity     = '1';
-          next.style.transform   = 'translateX(0)';
-          setTimeout(function () {
-            next.style.transition = '';
-            next.style.opacity    = '';
-            next.style.transform  = '';
-          }, 230);
-        });
-      }, 190);
-    } else {
-      hideEl('step1'); hideEl('step2'); hideEl('step3');
-      showEl('step' + n);
-    }
-  }
-
-  function goStep(n) {
-    slideToStep(n);
-    updateStepDots(n);
-    clearAuthError();
-    if (n === 1) {
-      stopConfirmCountdown();
-      setTimeout(function () { const el = document.getElementById('userIdInput'); if (el) { el.value = ''; el.focus(); } }, 320);
-    }
-    if (n === 2) startConfirmCountdown();
-  }
-
-  async function doVerify() {
-    const uidEl = document.getElementById('userIdInput');
-    const uid   = uidEl ? uidEl.value.trim() : '';
-    if (!uid) { showAuthError('// Please enter your Discord User ID'); return; }
-    if (!DISCORD_ID_RE.test(uid)) { showAuthError('// Invalid Discord User ID format'); return; }
-
-    const btn      = document.getElementById('verifyBtn');
-    const scanning = document.getElementById('authScanning');
-    if (btn) btn.disabled = true;
-    if (scanning) scanning.classList.add('show');
-    clearAuthError();
-
+  async function refreshAuth() {
     try {
-      const res = await fetch('/api/verify', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Request-Time': String(Date.now()) },
-        body:    JSON.stringify({ userId: uid }),
-      });
-      let data;
-      try { data = await res.json(); } catch { data = {}; }
-      if (res.ok && data.ok === true) {
-        localStorage.setItem(KEY_UID, uid);
-        pendingUid = uid;
-        goStep(2);
-      } else if (data.suspended) {
-        showSuspended();
-      } else {
-        showAuthError(sanitize(data.error || 'Requirements not met. Check your display name.', 400), true);
-      }
+      const res = await fetch('/api/auth/me', { credentials: 'include' });
+      const data = await res.json().catch(() => ({}));
+      if (data && data.authenticated && data.user) setAuthUI(data.user);
+      else setAuthUI(null);
     } catch {
-      showAuthError('// Network error — cannot reach verification endpoint');
-    } finally {
-      if (scanning) scanning.classList.remove('show');
-      if (btn) btn.disabled = false;
-    }
-  }
-
-  function doConfirm() {
-    if (!pendingUid) { goStep(1); return; }
-    doLogin();
-  }
-
-  async function doLogin() {
-    const uid = pendingUid || localStorage.getItem(KEY_UID);
-    if (!uid) { showAuthError('// Session expired — please restart'); goStep(1); return; }
-
-    const btn      = document.getElementById('checkConfirmBtn');
-    const scanning = document.getElementById('authScanning');
-    if (btn) btn.disabled = true;
-    clearAuthError();
-    if (scanning) scanning.classList.add('show');
-
-    try {
-      const res = await fetch('/api/auth', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Request-Time': String(Date.now()) },
-        body:    JSON.stringify({ userId: uid }),
-      });
-      let data;
-      try { data = await res.json(); } catch { data = {}; }
-
-      if (res.ok && data.ok === true && typeof data.token === 'string' && data.token.length > 0) {
-        localStorage.setItem(KEY_TOKEN, data.token);
-        localStorage.removeItem(KEY_UID);
-        pendingUid = null;
-        stopConfirmCountdown();
-        const overlay = document.getElementById('authOverlay');
-        if (overlay) {
-          overlay.style.transition = 'opacity 0.5s ease';
-          overlay.style.opacity = '0';
-          setTimeout(() => overlay.classList.add('hidden'), 500);
-        }
-        updateAccountBar();
-        renderHistory();
-      } else {
-        showAuthError(sanitize(data.error || 'Could not verify — did you click the DM link?', 300), true);
-      }
-    } catch {
-      showAuthError('// Network error — cannot reach auth endpoint');
-    } finally {
-      if (scanning) scanning.classList.remove('show');
-      if (btn) btn.disabled = false;
+      setAuthUI(null);
     }
   }
 
   async function doLogout() {
-    stopConfirmCountdown();
-    const token = getToken();
-    if (token) {
-      try {
-        await fetch('/api/logout', {
-          method:  'POST',
-          headers: { 'X-Session-Token': token, 'X-Request-Time': String(Date.now()) },
-        });
-      } catch {}
-    }
-    localStorage.removeItem(KEY_TOKEN);
-    localStorage.removeItem(KEY_UID);
-    scanResult = null;
-    hide('resultsBlock');
-    hide('errorBlock');
-    hide('progressBlock');
-    const lb = document.getElementById('logBlock');
-    const tb = document.getElementById('tableBody');
-    if (lb) lb.innerHTML = '';
-    if (tb) tb.innerHTML = '';
-    updateProgress(0);
-    updateAccountBar();
-    const overlay = document.getElementById('authOverlay');
-    if (overlay) {
-      overlay.classList.remove('hidden');
-      overlay.style.opacity = '1';
-      overlay.style.transition = '';
-    }
-    goStep(1);
+    try {
+      await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+    } catch {}
+    setAuthUI(null);
+    showToast('Logged out');
   }
 
-  function updateAccountBar() {
-    const bar = document.getElementById('accountBar');
-    if (!bar) return;
-    bar.style.display = isLoggedIn() ? 'flex' : 'none';
+  function handleAuthCallbackParams() {
+    const params = new URLSearchParams(window.location.search);
+    const err = params.get('auth_error');
+    const ok = params.get('auth');
+    if (err) showToast('Login failed: ' + sanitize(err, 60));
+    if (ok === 'ok') showToast('Logged in with Discord');
+    if (err || ok) {
+      params.delete('auth_error');
+      params.delete('auth');
+      const next = window.location.pathname + (params.toString() ? '?' + params.toString() : '') + window.location.hash;
+      window.history.replaceState({}, '', next);
+    }
   }
 
   function appendLog(msg, type) {
@@ -598,9 +365,8 @@
   }
 
   async function doScan() {
-    if (!isLoggedIn()) {
-      const overlay = document.getElementById('authOverlay');
-      if (overlay) { overlay.classList.remove('hidden'); overlay.style.opacity = '1'; }
+    if (!currentUser) {
+      showScanError('Please login with Discord before scanning.');
       return;
     }
 
@@ -632,31 +398,19 @@
       appendLog('Sending target to server...', 'ok');
       updateProgress(10, 'Querying intelligence sources...');
 
-      const sessionToken = getToken();
-      let csrfToken = '';
-      try {
-        const csrfRes  = await fetch('/api/csrf', {
-          method:  'GET',
-          headers: { 'X-Session-Token': sessionToken, 'X-Request-Time': String(Date.now()) },
-        });
-        const csrfData = await csrfRes.json().catch(() => ({}));
-        csrfToken = csrfData.csrfToken || '';
-      } catch {}
-
       const isForced = forcedRescan;
       forcedRescan   = false;
 
       const res = await fetch('/api/scan', {
         method:  'POST',
+        credentials: 'include',
         headers: {
           'Content-Type':    'application/json',
-          'X-Session-Token': sessionToken,
-          'X-CSRF-Token':    csrfToken,
           'X-Request-Time':  String(Date.now()),
           'X-Force-Refresh': isForced ? '1' : '0',
           'X-Scan-Depth':    scanDepth,
         },
-        body: JSON.stringify({ username }),
+        body: JSON.stringify({ username, scanDepth }),
       });
 
       updateProgress(40, 'Processing identity data...');
@@ -666,17 +420,9 @@
       try { data = await res.json(); } catch { throw new Error('Server returned invalid data.'); }
 
       if (!res.ok) {
-        if (res.status === 401 || res.status === 403) {
-          if (data.tagRemoved) {
-            showScanError(sanitize(data.error || 'Tag removed — role revoked.', 200));
-            throw new Error(sanitize(data.error, 200));
-          }
-          localStorage.removeItem(KEY_TOKEN);
-          updateAccountBar();
-          const overlay = document.getElementById('authOverlay');
-          if (overlay) { overlay.classList.remove('hidden'); overlay.style.opacity = '1'; }
-          goStep(1);
-          throw new Error(sanitize(data.error || 'Session expired — please log in again.', 200));
+        if (res.status === 401) {
+          setAuthUI(null);
+          throw new Error('Login required — please sign in with Discord.');
         }
         throw new Error(sanitize(data.error || 'Unknown error', 200));
       }
@@ -806,13 +552,13 @@
   function downloadTxt() {
     if (!scanResult) return;
     const lines = getFilteredEmails().map(e => sanitize(e.email, 254)).join('\n');
-    downloadFile(lines, 'antisec_emails_' + scanTargetSlug() + '_' + timestamp() + '.txt', 'text/plain');
+    downloadFile(lines, 'mono_emails_' + scanTargetSlug() + '_' + timestamp() + '.txt', 'text/plain');
     flashBtn('btnCopyEmails', '\u2714 Downloaded');
   }
 
   function downloadJson() {
     if (!scanResult) return;
-    downloadFile(JSON.stringify(scanResult, null, 2), 'antisec_report_' + scanTargetSlug() + '_' + timestamp() + '.json', 'application/json');
+    downloadFile(JSON.stringify(scanResult, null, 2), 'mono_report_' + scanTargetSlug() + '_' + timestamp() + '.json', 'application/json');
     flashBtn('btnCopyJSON', '\u2714 Downloaded');
   }
 
@@ -823,7 +569,7 @@
       const esc = v => '"' + String(v).replace(/"/g, '""') + '"';
       rows.push([esc(sanitize(e.email, 254)), esc(sanitize(e.name, 100)), Number(e.count) || 0, e.noreply ? 'true' : 'false'].join(','));
     });
-    downloadFile(rows.join('\n'), 'antisec_emails_' + scanTargetSlug() + '_' + timestamp() + '.csv', 'text/csv');
+    downloadFile(rows.join('\n'), 'mono_emails_' + scanTargetSlug() + '_' + timestamp() + '.csv', 'text/csv');
     flashBtn('btnCopyCSV', '\u2714 Downloaded');
   }
 
@@ -832,10 +578,10 @@
     t.textContent = sanitize(msg, 100);
     Object.assign(t.style, {
       position: 'fixed', bottom: '80px', left: '50%', transform: 'translateX(-50%)',
-      background: '#000', color: '#e8000f', padding: '8px 20px',
-      fontFamily: 'Share Tech Mono,monospace', fontSize: '11px',
-      border: '1px solid #e8000f', zIndex: '10000',
-      letterSpacing: '1px', pointerEvents: 'none',
+      background: '#111111', color: '#ffffff', padding: '10px 20px',
+      fontFamily: 'IBM Plex Mono, monospace', fontSize: '0.66rem',
+      border: '1px solid rgba(255,255,255,0.25)', zIndex: '10000',
+      letterSpacing: '0.04em', pointerEvents: 'none',
       maxWidth: '90vw', textAlign: 'center',
     });
     document.body.appendChild(t);
@@ -851,73 +597,11 @@
   }
 
   window.addEventListener('DOMContentLoaded', function () {
-    updateLockLabel();
-    updateAccountBar();
+    handleAuthCallbackParams();
+    refreshAuth();
     renderHistory();
 
-    if (Date.now() < lockUntil) {
-      showAuthError('// LOCKED — Retry after cooldown');
-      updateLockLabel();
-      if (!lockTimer) lockTimer = setInterval(updateLockLabel, 1000);
-    }
-
-    if (isLoggedIn()) {
-      const overlay = document.getElementById('authOverlay');
-      if (overlay) overlay.classList.add('hidden');
-    } else {
-      goStep(1);
-    }
-
-    document.getElementById('verifyBtn')?.addEventListener('click', doVerify);
-    document.getElementById('userIdInput')?.addEventListener('keydown', e => { if (e.key === 'Enter') doVerify(); });
-
-    const reqToggle = document.getElementById('reqToggle');
-    const reqBody   = document.getElementById('reqBody');
-    if (reqToggle && reqBody) {
-      function toggleReq(e) {
-        e.preventDefault();
-        const open = reqBody.classList.toggle('open');
-        reqToggle.classList.toggle('open', open);
-      }
-      reqToggle.addEventListener('click',    toggleReq);
-      reqToggle.addEventListener('touchend', toggleReq, { passive: false });
-    }
-    document.getElementById('checkConfirmBtn')?.addEventListener('click', doConfirm);
-    if (resendBtn) resendBtn.addEventListener('click', async () => {
-      const uid = pendingUid || localStorage.getItem(KEY_UID);
-      if (!uid) { goStep(1); return; }
-      resendBtn.disabled = true;
-      resendBtn.querySelector('span').textContent = '↺ Sending...';
-      clearAuthError();
-      try {
-        const res = await fetch('/api/verify', {
-          method:  'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Request-Time': String(Date.now()) },
-          body:    JSON.stringify({ userId: uid }),
-        });
-        let data;
-        try { data = await res.json(); } catch { data = {}; }
-        if (res.ok && data.ok) {
-          resendBtn.querySelector('span').textContent = '✓ DM Sent!';
-          setTimeout(() => { resendBtn.querySelector('span').textContent = '↺ Resend DM'; resendBtn.disabled = false; }, 5000);
-        } else {
-          showAuthError(sanitize(data.error || 'Could not resend DM.', 300));
-          resendBtn.querySelector('span').textContent = '↺ Resend DM';
-          resendBtn.disabled = false;
-        }
-      } catch {
-        showAuthError('// Network error — could not resend DM');
-        resendBtn.querySelector('span').textContent = '↺ Resend DM';
-        resendBtn.disabled = false;
-      }
-    });
-
-    document.getElementById('backBtn')?.addEventListener('click', () => {
-      pendingUid = null;
-      localStorage.removeItem(KEY_UID);
-      goStep(1);
-    });
-
+    document.getElementById('loginBtn')?.addEventListener('click', function () { window.location.href = '/api/auth/login'; });
     document.getElementById('logoutBtn')?.addEventListener('click', doLogout);
     document.getElementById('scanBtn')?.addEventListener('click', doScan);
 
@@ -943,6 +627,6 @@
     document.getElementById('btnCopyJSON')?.addEventListener('click',   downloadJson);
     document.getElementById('btnCopyCSV')?.addEventListener('click',    downloadCsv);
     document.getElementById('btnNewScan')?.addEventListener('click',    resetScan);
-  });
+  })();
 
 })();
