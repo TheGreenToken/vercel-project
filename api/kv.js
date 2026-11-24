@@ -70,10 +70,10 @@ const kv = {
   },
 
   async blacklistToken(tokenHash, ttlSeconds) {
-    await this.set(`antisec:blacklist:${tokenHash}`, 1, ttlSeconds);
+    await this.set(`mono:blacklist:${tokenHash}`, 1, ttlSeconds);
   },
   async isBlacklisted(tokenHash) {
-    const v = await this.get(`antisec:blacklist:${tokenHash}`);
+    const v = await this.get(`mono:blacklist:${tokenHash}`);
     return v !== null;
   },
 };

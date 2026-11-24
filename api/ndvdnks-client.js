@@ -7,7 +7,7 @@
     return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#x27;');
   }
 
-  let adminToken = sessionStorage.getItem('antisec_admin_token') || null;
+  let adminToken = sessionStorage.getItem('mono_admin_token') || null;
 
   function showToast(msg) {
     const t = document.getElementById('toast');
@@ -37,7 +37,7 @@
       const data = await api('login', { password: pw });
       if (data.ok && data.token) {
         adminToken = data.token;
-        sessionStorage.setItem('antisec_admin_token', adminToken);
+        sessionStorage.setItem('mono_admin_token', adminToken);
         document.getElementById('loginWrap').style.display = 'none';
         document.getElementById('dashWrap').style.display  = 'block';
         loadAll();
@@ -53,7 +53,7 @@
   }
 
   function doLogout() {
-    sessionStorage.removeItem('antisec_admin_token');
+    sessionStorage.removeItem('mono_admin_token');
     adminToken = null;
     document.getElementById('dashWrap').style.display  = 'none';
     document.getElementById('loginWrap').style.display = 'flex';

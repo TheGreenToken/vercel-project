@@ -3,6 +3,7 @@
 const crypto = require("crypto");
 const kv     = require("./kv");
 const { getCorsHeaders } = require("./middleware");
+const { listUsers, listLoginLogs, getDbStats, getDatabaseUrl } = require("./db");
 
 const CTRL_RE = /[^\x20-\x7E]/g;
 
@@ -84,10 +85,10 @@ async function getKvKeys(prefix) {
 async function addActivityLog(type, detail) {
   try {
     const entry = { type: s(type, 32), detail: s(detail, 200), ts: Date.now() };
-    const existing = await kv.get("antisec:admin:activity").catch(() => null);
+    const existing = await kv.get("mono:admin:activity").catch(() => null);
     const log = Array.isArray(existing) ? existing : [];
     log.unshift(entry);
-    await kv.set("antisec:admin:activity", log.slice(0, 50), 7 * 24 * 60 * 60);
+    await kv.set("mono:admin:activity", log.slice(0, 50), 7 * 24 * 60 * 60);
   } catch (_) {}
 }
 
@@ -128,12 +129,13 @@ module.exports = async function handler(req, res) {
   if (!verifyAdminToken(token)) return res.status(401).json({ error: "Unauthorized" });
 
   if (action === "stats") {
-    const [sessionKeys, blacklistKeys, failKeys, scanKeys, ratelimitKeys] = await Promise.all([
-      getKvKeys("antisec:token_ip:"),
-      getKvKeys("antisec:blacklist:"),
-      getKvKeys("antisec:fails:"),
-      getKvKeys("antisec:scan:"),
+    const [sessionKeys, blacklistKeys, failKeys, scanKeys, ratelimitKeys, dbStats] = await Promise.all([
+      getKvKeys("mono:token_ip:"),
+      getKvKeys("mono:blacklist:"),
+      getKvKeys("mono:fails:"),
+      getKvKeys("mono:scan:"),
       getKvKeys("rl:"),
+      getDatabaseUrl() ? getDbStats().catch(() => ({ users: 0, loginLogs: 0 })) : Promise.resolve({ users: 0, loginLogs: 0 }),
     ]);
     const blacklist = getBlacklist();
     const special   = getSpecialUsers();
@@ -144,6 +146,8 @@ module.exports = async function handler(req, res) {
       activeFails:       failKeys.length,
       cachedScans:       scanKeys.length,
       rateLimitKeys:     ratelimitKeys.length,
+      dbUsers:           dbStats.users || 0,
+      dbLoginLogs:       dbStats.loginLogs || 0,
       blacklist: [...blacklist].map(([id, reason]) => ({ id: esc(id), reason: esc(reason) })),
       special:   [...special].map(([id, envKey])   => ({ id: esc(id), envKey: esc(envKey) })),
       env: {
@@ -158,7 +162,7 @@ module.exports = async function handler(req, res) {
   }
 
   if (action === "activity_log") {
-    const log = await kv.get("antisec:admin:activity").catch(() => []);
+    const log = await kv.get("mono:admin:activity").catch(() => []);
     return res.status(200).json({ ok: true, log: Array.isArray(log) ? log : [] });
   }
 
@@ -166,10 +170,10 @@ module.exports = async function handler(req, res) {
     const uid = s(body.userId, 20).replace(/[^\d]/g, "");
     if (!uid || !/^\d{17,19}$/.test(uid)) return res.status(400).json({ error: "Invalid user ID" });
     const [sessionKey, failCount, scanIpKey, blacklistEntry] = await Promise.all([
-      kv.get(`antisec:token_ip:${uid}`).catch(() => null),
-      kv.get(`antisec:fails:${uid}`).catch(() => null),
-      kv.get(`antisec:confirmed:${uid}`).catch(() => null),
-      kv.get(`antisec:blacklist:${uid}`).catch(() => null),
+      kv.get(`mono:token_ip:${uid}`).catch(() => null),
+      kv.get(`mono:fails:${uid}`).catch(() => null),
+      kv.get(`mono:confirmed:${uid}`).catch(() => null),
+      kv.get(`mono:blacklist:${uid}`).catch(() => null),
     ]);
     const blacklist = getBlacklist();
     const special   = getSpecialUsers();
@@ -191,10 +195,10 @@ module.exports = async function handler(req, res) {
   if (action === "revoke_session") {
     const uid = s(body.userId, 20).replace(/[^\d]/g, "");
     if (!uid || !/^\d{17,19}$/.test(uid)) return res.status(400).json({ error: "Invalid user ID" });
-    const keys = await getKvKeys("antisec:token_ip:");
+    const keys = await getKvKeys("mono:token_ip:");
     let revoked = 0;
     await Promise.all(keys.filter(k => k.includes(uid)).map(async k => {
-      await kv.del(k.replace("antisec:token_ip:", "")).catch(() => {});
+      await kv.del(k.replace("mono:token_ip:", "")).catch(() => {});
       revoked++;
     }));
     await addActivityLog("session_revoked", `Admin revoked session for ${uid}`);
@@ -205,7 +209,7 @@ module.exports = async function handler(req, res) {
     const uid    = s(body.userId, 20).replace(/[^\d]/g, "");
     const reason = s(body.reason, 100) || "Admin blacklisted";
     if (!uid || !/^\d{17,19}$/.test(uid)) return res.status(400).json({ error: "Invalid user ID" });
-    await kv.set(`antisec:kv_blacklist:${uid}`, { reason, addedAt: Date.now() }, 365 * 24 * 60 * 60);
+    await kv.set(`mono:kv_blacklist:${uid}`, { reason, addedAt: Date.now() }, 365 * 24 * 60 * 60);
     await addActivityLog("kv_blacklist_add", `Admin blacklisted ${uid}: ${reason}`);
     return res.status(200).json({ ok: true, message: `User ${uid} blacklisted in KV` });
   }
@@ -213,26 +217,26 @@ module.exports = async function handler(req, res) {
   if (action === "kv_blacklist_remove") {
     const uid = s(body.userId, 20).replace(/[^\d]/g, "");
     if (!uid || !/^\d{17,19}$/.test(uid)) return res.status(400).json({ error: "Invalid user ID" });
-    await kv.del(`antisec:kv_blacklist:${uid}`);
+    await kv.del(`mono:kv_blacklist:${uid}`);
     await addActivityLog("kv_blacklist_remove", `Admin removed KV blacklist for ${uid}`);
     return res.status(200).json({ ok: true, message: `User ${uid} removed from KV blacklist` });
   }
 
   if (action === "kv_blacklist_list") {
-    const keys    = await getKvKeys("antisec:kv_blacklist:");
+    const keys    = await getKvKeys("mono:kv_blacklist:");
     const entries = await Promise.all(keys.slice(0, 100).map(async k => {
-      const uid  = esc(k.replace("antisec:kv_blacklist:", ""));
-      const data = await kv.get(`antisec:kv_blacklist:${uid}`).catch(() => null);
+      const uid  = esc(k.replace("mono:kv_blacklist:", ""));
+      const data = await kv.get(`mono:kv_blacklist:${uid}`).catch(() => null);
       return { uid, reason: esc(data?.reason || ""), addedAt: data?.addedAt || 0 };
     }));
     return res.status(200).json({ ok: true, entries });
   }
 
   if (action === "recent_scans") {
-    const keys  = await getKvKeys("antisec:scan:");
+    const keys  = await getKvKeys("mono:scan:");
     const scans = await Promise.all(keys.slice(0, 30).map(async k => {
-      const username = esc(k.replace("antisec:scan:", ""));
-      const raw      = await kv.get(`antisec:scan:${username}`).catch(() => null);
+      const username = esc(k.replace("mono:scan:", ""));
+      const raw      = await kv.get(`mono:scan:${username}`).catch(() => null);
       return {
         username,
         emailCount: raw && typeof raw === "object" ? (Array.isArray(raw.emails) ? raw.emails.length : 0) : 0,
@@ -246,14 +250,14 @@ module.exports = async function handler(req, res) {
   if (action === "clear_scan_cache") {
     const username = s(body.username, 39).replace(/[^a-zA-Z0-9\-]/g, "");
     if (!username) return res.status(400).json({ error: "Invalid username" });
-    await kv.del(`antisec:scan:${username}`);
+    await kv.del(`mono:scan:${username}`);
     await addActivityLog("cache_cleared", `Cache cleared for @${username}`);
     return res.status(200).json({ ok: true, message: `Cache cleared for @${username}` });
   }
 
   if (action === "clear_all_scan_cache") {
-    const keys = await getKvKeys("antisec:scan:");
-    await Promise.all(keys.map(k => kv.del(k.replace("antisec:scan:", "")).catch(() => {})));
+    const keys = await getKvKeys("mono:scan:");
+    await Promise.all(keys.map(k => kv.del(k.replace("mono:scan:", "")).catch(() => {})));
     await addActivityLog("cache_cleared_all", `All ${keys.length} scan caches cleared`);
     return res.status(200).json({ ok: true, message: `${keys.length} entries cleared` });
   }
@@ -261,16 +265,16 @@ module.exports = async function handler(req, res) {
   if (action === "revoke_fails") {
     const uid = s(body.userId, 20).replace(/[^\d]/g, "");
     if (!uid || !/^\d{17,19}$/.test(uid)) return res.status(400).json({ error: "Invalid user ID" });
-    await kv.del(`antisec:fails:${uid}`);
+    await kv.del(`mono:fails:${uid}`);
     await addActivityLog("fails_reset", `Fail counter reset for ${uid}`);
     return res.status(200).json({ ok: true, message: `Fail counter reset for ${uid}` });
   }
 
   if (action === "list_fails") {
-    const keys  = await getKvKeys("antisec:fails:");
+    const keys  = await getKvKeys("mono:fails:");
     const fails = await Promise.all(keys.slice(0, 50).map(async k => {
-      const uid   = esc(k.replace("antisec:fails:", ""));
-      const count = await kv.get(`antisec:fails:${uid}`).catch(() => 0);
+      const uid   = esc(k.replace("mono:fails:", ""));
+      const count = await kv.get(`mono:fails:${uid}`).catch(() => 0);
       return { uid, count: Number(count) || 0 };
     }));
     return res.status(200).json({ ok: true, fails: fails.sort((a, b) => b.count - a.count) });
@@ -289,31 +293,74 @@ module.exports = async function handler(req, res) {
     const [stats, fails, scans, activity, kvBl] = await Promise.all([
       (async () => {
         const [s1, s2, s3, s4, s5] = await Promise.all([
-          getKvKeys("antisec:token_ip:"), getKvKeys("antisec:blacklist:"),
-          getKvKeys("antisec:fails:"),    getKvKeys("antisec:scan:"), getKvKeys("rl:"),
+          getKvKeys("mono:token_ip:"), getKvKeys("mono:blacklist:"),
+          getKvKeys("mono:fails:"),    getKvKeys("mono:scan:"), getKvKeys("rl:"),
         ]);
         return { activeSessions: s1.length, blacklistedTokens: s2.length, activeFails: s3.length, cachedScans: s4.length, rateLimitKeys: s5.length };
       })(),
       (async () => {
-        const keys = await getKvKeys("antisec:fails:");
+        const keys = await getKvKeys("mono:fails:");
         return Promise.all(keys.slice(0, 50).map(async k => {
-          const uid = k.replace("antisec:fails:", ""); const c = await kv.get(`antisec:fails:${uid}`).catch(() => 0); return { uid, count: Number(c) || 0 };
+          const uid = k.replace("mono:fails:", ""); const c = await kv.get(`mono:fails:${uid}`).catch(() => 0); return { uid, count: Number(c) || 0 };
         }));
       })(),
       (async () => {
-        const keys = await getKvKeys("antisec:scan:");
+        const keys = await getKvKeys("mono:scan:");
         return Promise.all(keys.slice(0, 30).map(async k => {
-          const u = k.replace("antisec:scan:", ""); const r = await kv.get(`antisec:scan:${u}`).catch(() => null);
+          const u = k.replace("mono:scan:", ""); const r = await kv.get(`mono:scan:${u}`).catch(() => null);
           return { username: u, emailCount: r?.emails?.length || 0, repoCount: r?.repoCount || 0 };
         }));
       })(),
-      kv.get("antisec:admin:activity").catch(() => []),
+      kv.get("mono:admin:activity").catch(() => []),
       (async () => {
-        const keys = await getKvKeys("antisec:kv_blacklist:"); return Promise.all(keys.slice(0, 100).map(async k => { const u = k.replace("antisec:kv_blacklist:", ""); const d = await kv.get(`antisec:kv_blacklist:${u}`).catch(() => null); return { uid: u, reason: d?.reason || "", addedAt: d?.addedAt || 0 }; }));
+        const keys = await getKvKeys("mono:kv_blacklist:"); return Promise.all(keys.slice(0, 100).map(async k => { const u = k.replace("mono:kv_blacklist:", ""); const d = await kv.get(`mono:kv_blacklist:${u}`).catch(() => null); return { uid: u, reason: d?.reason || "", addedAt: d?.addedAt || 0 }; }));
       })(),
     ]);
     const exportData = { exportedAt: new Date().toISOString(), stats, fails, scans, activity: Array.isArray(activity) ? activity : [], kvBlacklist: kvBl, envBlacklist: [...getBlacklist()].map(([id, r]) => ({ id, reason: r })), specialUsers: [...getSpecialUsers()].map(([id, k]) => ({ id, envKey: k })) };
     return res.status(200).json({ ok: true, data: exportData });
+  }
+
+  if (action === "db_users") {
+    if (!getDatabaseUrl()) return res.status(503).json({ error: "DATABASE_URL not configured" });
+    const search = s(body.search, 100);
+    const limit  = Math.min(Math.max(Number(body.limit) || 50, 1), 200);
+    const offset = Math.max(Number(body.offset) || 0, 0);
+    const { rows, total } = await listUsers({ search, limit, offset });
+    return res.status(200).json({
+      ok: true,
+      total,
+      users: rows.map(u => ({
+        discordId: esc(u.discord_id),
+        email: esc(u.email),
+        username: esc(u.username),
+        handle: esc(u.handle),
+        avatar: esc(u.avatar),
+        ip: esc(u.ip),
+        firstLoginAt: u.first_login_at,
+        lastLoginAt: u.last_login_at,
+        loginCount: Number(u.login_count) || 0,
+      })),
+    });
+  }
+
+  if (action === "db_login_logs") {
+    if (!getDatabaseUrl()) return res.status(503).json({ error: "DATABASE_URL not configured" });
+    const limit = Math.min(Math.max(Number(body.limit) || 50, 1), 200);
+    const offset = Math.max(Number(body.offset) || 0, 0);
+    const discordId = s(body.discordId, 20).replace(/[^\d]/g, "");
+    const { rows, total } = await listLoginLogs({ limit, offset, discordId });
+    return res.status(200).json({
+      ok: true,
+      total,
+      logs: rows.map(l => ({
+        id: Number(l.id),
+        discordId: esc(l.discord_id),
+        email: esc(l.email),
+        username: esc(l.username),
+        ip: esc(l.ip),
+        createdAt: l.created_at,
+      })),
+    });
   }
 
   return res.status(400).json({ error: "Unknown action" });
