@@ -2,6 +2,7 @@
   'use strict';
 
   const KEY_HISTORY  = 'mono_scan_history';
+  const AUTH_KEY     = 'mono_auth_token';
   const HISTORY_MAX  = 10;
   const USERNAME_RE  = /^[a-zA-Z0-9-]{1,39}$/;
   const AVATAR_RE    = /^https:\/\/(avatars\.githubusercontent\.com|cdn\.discordapp\.com)\//;
@@ -29,6 +30,16 @@
 
   function saveHistory(entries) {
     try { localStorage.setItem(KEY_HISTORY, JSON.stringify(entries)); } catch {}
+  }
+
+  function getAuthToken() {
+    try { return localStorage.getItem(AUTH_KEY) || ''; } catch { return ''; }
+  }
+  function setAuthToken(token) {
+    try {
+      if (token) localStorage.setItem(AUTH_KEY, String(token));
+      else localStorage.removeItem(AUTH_KEY);
+    } catch {}
   }
 
   function pushHistory(data) {
@@ -151,7 +162,14 @@
     if (user) {
       if (loginBtn) loginBtn.hidden = true;
       if (userWrap) userWrap.classList.add('visible');
-      if (avatar) { const src = safeAvatar(user.avatar); if (src) avatar.src = src; else avatar.removeAttribute("src"); avatar.alt = ""; }
+      if (avatar) {
+        avatar.onerror = function () { avatar.style.visibility = 'hidden'; };
+        avatar.onload = function () { avatar.style.visibility = 'visible'; };
+        const src = safeAvatar(user.avatar);
+        if (src) { avatar.style.visibility = 'visible'; avatar.src = src; }
+        else { avatar.removeAttribute("src"); avatar.style.visibility = 'hidden'; }
+        avatar.alt = "";
+      }
       if (nameEl) nameEl.textContent = sanitize(user.username || user.handle || 'User', 100);
     } else {
       if (loginBtn) loginBtn.hidden = false;
@@ -165,17 +183,29 @@
     try {
       const res = await fetch('/api/auth/me', { credentials: 'include' });
       const data = await res.json().catch(() => ({}));
-      if (data && data.authenticated && data.user) setAuthUI(data.user);
-      else setAuthUI(null);
+      if (data && data.authenticated && data.user) {
+        if (data.token) setAuthToken(data.token);
+        setAuthUI(data.user);
+      } else {
+        setAuthToken('');
+        setAuthUI(null);
+      }
     } catch {
+      setAuthToken('');
       setAuthUI(null);
     }
   }
 
   async function doLogout() {
     try {
-      await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+      const token = getAuthToken();
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        credentials: 'include',
+        headers: token ? { 'X-Session-Token': token } : {},
+      });
     } catch {}
+    setAuthToken('');
     setAuthUI(null);
     showToast('Logged out');
   }
@@ -401,6 +431,7 @@
       const isForced = forcedRescan;
       forcedRescan   = false;
 
+      const authToken = getAuthToken();
       const res = await fetch('/api/scan', {
         method:  'POST',
         credentials: 'include',
@@ -409,6 +440,7 @@
           'X-Request-Time':  String(Date.now()),
           'X-Force-Refresh': isForced ? '1' : '0',
           'X-Scan-Depth':    scanDepth,
+          ...(authToken ? { 'X-Session-Token': authToken } : {}),
         },
         body: JSON.stringify({ username, scanDepth }),
       });
@@ -421,6 +453,7 @@
 
       if (!res.ok) {
         if (res.status === 401) {
+          setAuthToken('');
           setAuthUI(null);
           throw new Error('Login required — please sign in with Discord.');
         }

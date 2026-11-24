@@ -277,6 +277,7 @@ module.exports = async function handler(req, res) {
     }
     return json(res, 200, {
       authenticated: true,
+      token: session.token,
       user: {
         id: String(profile.id || session.userId),
         username: String(profile.username || "Discord User").slice(0, 100),
