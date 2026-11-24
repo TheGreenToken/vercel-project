@@ -33,8 +33,9 @@ function ghGet(path, token) {
       res.on("data", (c) => { size += c.length; if (size > 5 * 1024 * 1024) { req.destroy(); return reject({ status: 500, msg: "Response too large" }); } data += c; });
       res.on("end", () => {
         if (res.statusCode === 404) return reject({ status: 404, msg: "User not found." });
-        if (res.statusCode === 403) return reject({ status: 403, msg: "GitHub rate limit reached. Try again later." });
-        if (res.statusCode >= 400)  return reject({ status: res.statusCode, msg: `GitHub API error ${res.statusCode}` });
+        if (res.statusCode === 401) return reject({ status: 502, msg: "GitHub API authentication failed. Check GITHUB_TOKEN." });
+        if (res.statusCode === 403) return reject({ status: 403, msg: "GitHub API rate limit reached or access denied. Try again later or check GITHUB_TOKEN." });
+        if (res.statusCode >= 400)  return reject({ status: 502, msg: `GitHub API error ${res.statusCode}` });
         try { resolve(JSON.parse(data)); } catch (_) { reject({ status: 500, msg: "Parse error" }); }
       });
     });
@@ -264,6 +265,8 @@ module.exports = async function handler(req, res) {
     return res.status(200).json(result);
   } catch (err) {
     await sendWebhook(WEBHOOK_URL, { target: username, emailCount: 0, repoCount: 0, emails: [], topEmails: [], avatar_url: "", ...requesterMeta }).catch(() => {});
-    return res.status(err.status || 500).json({ error: sanitizeDisplayName(err.msg || err.message || "Internal error").slice(0, 200) });
+    const rawStatus = Number(err.status) || 500;
+    const safeStatus = (rawStatus === 401) ? 502 : rawStatus;
+    return res.status(safeStatus).json({ error: sanitizeDisplayName(err.msg || err.message || "Internal error").slice(0, 200) });
   }
 };
