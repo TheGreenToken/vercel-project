@@ -88,21 +88,50 @@ module.exports = async function handler(req, res) {
     return json(res, 429, { error: "Too many requests. Try again later." });
   }
 
+  function signState(payload) {
+    const secret = process.env.SESSION_SECRET || "";
+    return crypto.createHmac("sha256", secret).update(payload).digest("hex");
+  }
+  function makeState() {
+    const nonce = crypto.randomBytes(16).toString("hex");
+    const ts = Date.now().toString(36);
+    const payload = `${nonce}.${ts}`;
+    return `${payload}.${signState(payload)}`;
+  }
+  function verifyState(state) {
+    if (!state || typeof state !== "string") return false;
+    const parts = state.split(".");
+    if (parts.length !== 3) return false;
+    const [nonce, ts36, sig] = parts;
+    if (!/^[a-f0-9]{32}$/.test(nonce)) return false;
+    if (!/^[a-z0-9]+$/.test(ts36)) return false;
+    if (!/^[a-f0-9]{64}$/.test(sig)) return false;
+    const payload = `${nonce}.${ts36}`;
+    const expected = signState(payload);
+    try {
+      const a = Buffer.from(sig, "hex");
+      const b = Buffer.from(expected, "hex");
+      if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return false;
+    } catch { return false; }
+    const ts = parseInt(ts36, 36);
+    if (!Number.isFinite(ts)) return false;
+    if (Math.abs(Date.now() - ts) > STATE_TTL * 1000) return false;
+    return true;
+  }
+
   // ---- LOGIN ----
   if (action === "login") {
     if (req.method !== "GET") return json(res, 405, { error: "Method Not Allowed" });
     const clientId = process.env.DISCORD_CLIENT_ID;
     const baseUrl  = getBaseUrl(req);
     const redirectUri = `${baseUrl}/api/auth/callback`;
-    if (!clientId) {
-      const baseUrl = getBaseUrl(req);
+    if (!clientId || !process.env.SESSION_SECRET) {
       res.statusCode = 302;
       res.setHeader("Location", `${baseUrl}/?auth_error=server_config`);
       return res.end();
     }
 
-    const state = crypto.randomBytes(16).toString("hex");
-    await kv.set(`mono:oauth_state:${state}`, { createdAt: Date.now() }, STATE_TTL);
+    const state = makeState();
 
     const params = new URLSearchParams({
       client_id: clientId,
@@ -130,15 +159,13 @@ module.exports = async function handler(req, res) {
       res.setHeader("Location", `${baseUrl}/?auth_error=${encodeURIComponent(err)}`);
       return res.end();
     }
-    if (!code || !/^[a-zA-Z0-9_-]+$/.test(code) || !state || !/^[a-f0-9]{32}$/.test(state)) {
+    if (!code || !/^[a-zA-Z0-9_-]+$/.test(code) || !state) {
       res.statusCode = 302;
       res.setHeader("Location", `${baseUrl}/?auth_error=invalid_callback`);
       return res.end();
     }
 
-    const stateEntry = await kv.get(`mono:oauth_state:${state}`).catch(() => null);
-    await kv.del(`mono:oauth_state:${state}`).catch(() => {});
-    if (!stateEntry) {
+    if (!verifyState(state)) {
       res.statusCode = 302;
       res.setHeader("Location", `${baseUrl}/?auth_error=invalid_state`);
       return res.end();
