@@ -131,6 +131,20 @@ tr:last-child td{border-bottom:none}
 
     <div class="section">
       <div class="section-head">
+        <div class="section-title">User Lookup</div>
+        <div class="section-actions">
+          <input id="lookupUserId" class="search-input" placeholder="Discord user ID..." />
+          <button class="btn sm" id="lookupBtn" type="button">Lookup</button>
+        </div>
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Field</th><th>Value</th></tr></thead>
+        <tbody id="lookupBody"><tr><td colspan="2" class="empty">// enter a Discord ID to inspect user data</td></tr></tbody>
+      </table></div>
+    </div>
+
+    <div class="section">
+      <div class="section-head">
         <div class="section-title">Recent Scans (Cached)</div>
         <div class="section-actions">
           <button class="btn sm" id="clearAllCacheBtn" type="button">Clear All Cache</button>
@@ -414,6 +428,101 @@ tr:last-child td{border-bottom:none}
     });
   }
 
+  async function lookupUser() {
+    const raw = (document.getElementById('lookupUserId')?.value || '').trim();
+    const uid = san(raw, 20).replace(/[^\d]/g, '');
+    const tbody = document.getElementById('lookupBody');
+    if (!uid || !/^\d{17,19}$/.test(uid)) {
+      tbody.innerHTML = '<tr><td colspan="2" class="empty">// enter a valid Discord ID (17-19 digits)</td></tr>';
+      return;
+    }
+    tbody.innerHTML = '<tr><td colspan="2" class="empty">// loading...</td></tr>';
+    try {
+      const [kvRes, dbRes, logsRes] = await Promise.all([
+        api('user_lookup', { userId: uid }),
+        api('db_users', { search: uid, limit: 5, offset: 0 }),
+        api('db_login_logs', { discordId: uid, limit: 5, offset: 0 }),
+      ]);
+
+      const rows = [];
+      const add = (k, v) => rows.push([k, v == null || v === '' ? '—' : String(v)]);
+
+      add('Discord ID', uid);
+
+      if (dbRes && dbRes.ok && Array.isArray(dbRes.users)) {
+        const u = dbRes.users.find(x => String(x.discordId) === uid) || dbRes.users[0];
+        if (u) {
+          add('DB Username', san(u.username, 60));
+          add('DB Handle', san(u.handle, 60));
+          add('DB Email', san(u.email, 120));
+          add('DB IP', san(u.ip, 45));
+          add('DB Login Count', Number(u.loginCount || 0));
+          add('DB First Login', u.firstLoginAt ? new Date(u.firstLoginAt).toLocaleString() : '—');
+          add('DB Last Login', u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleString() : '—');
+          add('DB Avatar', san(u.avatar, 200));
+        } else {
+          add('DB Record', 'Not found');
+        }
+      } else {
+        add('DB Record', dbRes?.error || 'Unavailable');
+      }
+
+      if (kvRes && kvRes.ok) {
+        add('Active Session', kvRes.hasActiveSession ? 'Yes' : 'No');
+        add('Session IP', kvRes.sessionIp || '—');
+        add('Fail Count', Number(kvRes.failCount || 0));
+        add('Confirmed', kvRes.isConfirmed ? 'Yes' : 'No');
+        add('Confirmed Until', kvRes.confirmedUntil ? new Date(kvRes.confirmedUntil).toLocaleString() : '—');
+        add('Blacklisted (Env)', kvRes.isBlacklisted ? ('Yes — ' + san(kvRes.blacklistReason || '', 100)) : 'No');
+        add('Special User', kvRes.isSpecial ? ('Yes — ' + san(kvRes.specialKey || '', 40)) : 'No');
+      } else {
+        add('KV Status', kvRes?.error || 'Unavailable');
+      }
+
+      if (logsRes && logsRes.ok && Array.isArray(logsRes.logs)) {
+        add('Recent DB Logs', logsRes.logs.length ? logsRes.logs.length + ' shown' : 'None');
+      }
+
+      tbody.innerHTML = '';
+      rows.forEach(([k,v]) => {
+        const tr = document.createElement('tr');
+        const tdK = document.createElement('td');
+        tdK.className = 'id';
+        tdK.textContent = k;
+        const tdV = document.createElement('td');
+        tdV.textContent = v;
+        tdV.style.color = 'var(--text)';
+        tdV.style.whiteSpace = 'normal';
+        tdV.style.wordBreak = 'break-word';
+        tr.appendChild(tdK);
+        tr.appendChild(tdV);
+        tbody.appendChild(tr);
+      });
+
+      if (logsRes && logsRes.ok && Array.isArray(logsRes.logs) && logsRes.logs.length) {
+        const sep = document.createElement('tr');
+        sep.innerHTML = '<td colspan="2" class="empty" style="color:var(--text-muted)">// recent login logs</td>';
+        tbody.appendChild(sep);
+        logsRes.logs.forEach(l => {
+          const tr = document.createElement('tr');
+          const when = l.createdAt ? new Date(l.createdAt).toLocaleString() : '';
+          const tdK = document.createElement('td');
+          tdK.className = 'id';
+          tdK.textContent = when || 'log';
+          const tdV = document.createElement('td');
+          tdV.style.whiteSpace = 'normal';
+          tdV.style.wordBreak = 'break-word';
+          tdV.textContent = san(l.username,60) + ' · ' + san(l.email,120) + ' · ' + san(l.ip,45);
+          tr.appendChild(tdK);
+          tr.appendChild(tdV);
+          tbody.appendChild(tr);
+        });
+      }
+    } catch (e) {
+      tbody.innerHTML = '<tr><td colspan="2" class="empty">// lookup failed</td></tr>';
+    }
+  }
+
   function loadAll() {
     loadStats();
     loadScans();
@@ -429,6 +538,8 @@ tr:last-child td{border-bottom:none}
   document.getElementById('dbUsersRefreshBtn')?.addEventListener('click', function(){ loadDbUsers(); });
   document.getElementById('dbLogsRefreshBtn')?.addEventListener('click', function(){ loadDbLogs(); });
   document.getElementById('dbUserSearch')?.addEventListener('keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); loadDbUsers(); } });
+  document.getElementById('lookupBtn')?.addEventListener('click', lookupUser);
+  document.getElementById('lookupUserId')?.addEventListener('keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); lookupUser(); } });
   document.getElementById('dbUsersExportBtn')?.addEventListener('click', function(){
     if(!lastDbUsers.length) return showToast('No users to export');
     downloadCsv('mono-db-users.csv', ['discordId','username','handle','email','ip','loginCount','firstLoginAt','lastLoginAt'], lastDbUsers);
