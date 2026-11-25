@@ -62,6 +62,12 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;opac
 .hero-meta{display:flex;flex-wrap:wrap;gap:10px 20px;margin-top:4px;animation:fadeIn .8s .15s ease both}
 .hero-chip{font-family:'IBM Plex Mono',monospace;font-size:.62rem;letter-spacing:.1em;text-transform:uppercase;color:var(--text-faint);padding:8px 12px;border:1px solid var(--border);background:rgba(255,255,255,.015)}
 .hero-chip b{color:var(--text-muted);font-weight:500}
+/* tool nav */
+.tool-nav{display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap}
+.tool-tab{font-family:'IBM Plex Mono',monospace;font-size:.68rem;letter-spacing:.1em;text-transform:uppercase;padding:12px 18px;border:1px solid var(--border);background:rgba(255,255,255,.01);color:var(--text-faint);cursor:pointer;transition:all .25s var(--ease-out);min-height:44px}
+.tool-tab:hover{border-color:var(--text-muted);color:var(--text-muted)}
+.tool-tab.active{background:#fff;color:#000;border-color:#fff;font-weight:600}
+.tool-panel{display:none}.tool-panel.active{display:block}
 /* panel */
 .panel{background:linear-gradient(180deg,rgba(255,255,255,.03),rgba(255,255,255,.01));border:1px solid var(--border);padding:clamp(20px,3vw,32px);box-shadow:var(--shadow);backdrop-filter:blur(2px)}
 .divider{display:flex;align-items:center;margin-bottom:20px;gap:16px}
@@ -148,6 +154,21 @@ input::placeholder{color:var(--text-faint)}
 .tag-conf.high{color:#fff;border-color:#555}.tag-conf.medium{color:var(--text-muted)}.tag-conf.low{color:var(--text-faint);border-color:var(--border-soft)}
 .th-sort{cursor:pointer;user-select:none;transition:color .15s}.th-sort:hover{color:#fff}.th-sort.sort-active{color:#fff}
 .table-empty{padding:28px 20px;font-family:'IBM Plex Mono',monospace;font-size:.7rem;color:var(--text-faint)}
+/* email tool */
+.email-row{display:grid;grid-template-columns:minmax(160px,1fr) 140px 1fr 90px;padding:16px 20px;border-bottom:1px solid var(--border-soft);align-items:center;gap:12px;transition:background .25s,transform .25s var(--ease-out);animation:rowSlide .35s var(--ease-out) both;min-width:560px}
+.email-row:last-child{border-bottom:none}
+.email-row:hover{background:rgba(255,255,255,.035);transform:translateX(4px);box-shadow:inset 2px 0 0 rgba(255,255,255,.6)}
+.email-service{font-family:'IBM Plex Mono',monospace;font-size:.8rem;color:#fff;display:flex;align-items:center;gap:10px}
+.email-service .svc-cat{font-size:.56rem;letter-spacing:.08em;color:var(--text-faint);border:1px solid var(--border);padding:2px 6px;text-transform:uppercase}
+.email-status{font-family:'IBM Plex Mono',monospace;font-size:.62rem;letter-spacing:.08em;text-transform:uppercase;padding:6px 10px;border:1px solid var(--border);display:inline-flex;align-items:center;gap:8px;width:fit-content;color:var(--text-muted)}
+.email-status::before{content:'';width:6px;height:6px;background:currentColor;flex-shrink:0}
+.email-status.found{color:#fff;border-color:#555;background:rgba(255,255,255,.06)}
+.email-status.notfound{color:var(--text-faint);border-color:var(--border-soft)}
+.email-status.error{color:var(--text-muted);border-color:var(--border);text-decoration:line-through;text-decoration-color:#555}
+.email-status.ratelimit{color:var(--text-muted);border-color:#444}
+.email-detail{font-family:'IBM Plex Mono',monospace;font-size:.68rem;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.email-cat{text-align:right;font-family:'IBM Plex Mono',monospace;font-size:.62rem;color:var(--text-faint);text-transform:uppercase;letter-spacing:.08em}
+@media (max-width:640px){.email-row{grid-template-columns:1fr 110px;min-width:unset}.email-row>*:nth-child(3),.email-row>*:nth-child(4){display:none}}
 /* actions */
 .actions{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-top:24px}
 .btn{font-family:'IBM Plex Mono',monospace;font-size:.66rem;letter-spacing:.08em;padding:14px 14px;border:1px solid var(--border-strong);background:rgba(255,255,255,.01);color:var(--text-muted);cursor:pointer;text-transform:uppercase;transition:all .25s var(--ease-out);text-align:center;min-height:var(--touch-min);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -211,14 +232,20 @@ footer.footer{position:fixed;bottom:0;left:0;right:0;height:48px;display:flex;al
     <div class="logo-eyebrow">Open Source Intelligence</div>
     <div class="logo"><span class="brand">mono.</span></div>
     <div class="logo-underline"></div>
-    <div class="logo-sub">Scan public GitHub profiles for email intelligence. Fast, focused, and built for clean signal.</div>
+    <div class="logo-sub">A focused OSINT multitool. Run clean intelligence workflows from one interface.</div>
     <div class="hero-meta">
-      <div class="hero-chip"><b>01</b> Public commits</div>
-      <div class="hero-chip"><b>02</b> Email extraction</div>
+      <div class="hero-chip"><b>01</b> GitHub OSINT</div>
+      <div class="hero-chip"><b>02</b> Email Footprint</div>
       <div class="hero-chip"><b>03</b> Export-ready</div>
     </div>
   </div>
 
+  <div class="tool-nav" id="toolNav">
+    <button class="tool-tab active" id="toolTabGithub" type="button" data-tool="github">GitHub Scanner</button>
+    <button class="tool-tab" id="toolTabEmail" type="button" data-tool="email">Email Footprint</button>
+  </div>
+
+  <div class="tool-panel active" id="toolGithub">
   <div class="panel input-section">
     <div class="divider"><div class="divider-label">Target Acquisition</div></div>
     <div class="input-row-top">
@@ -325,9 +352,99 @@ footer.footer{position:fixed;bottom:0;left:0;right:0;height:48px;display:flex;al
     </div>
     <div class="history-list" id="historyList"></div>
   </div>
+  </div><!-- /toolGithub -->
+
+  <div class="tool-panel" id="toolEmail">
+    <div class="panel input-section">
+      <div class="divider"><div class="divider-label">Email Footprint</div></div>
+      <div class="input-row-top">
+        <div class="field-label">Email Address</div>
+        <div class="depth-bar">
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:.62rem;color:var(--text-faint);letter-spacing:.08em;text-transform:uppercase;">Account presence check</span>
+        </div>
+      </div>
+      <div class="input-row">
+        <div class="input-at">@</div>
+        <input type="text" id="emailInput" placeholder="target@example.com"
+               autocomplete="off" spellcheck="false" autocapitalize="none"
+               maxlength="254" />
+        <button class="btn-scan" id="emailScanBtn" type="button"><span>Check</span></button>
+      </div>
+      <div class="hint">// checks public account-existence signals across supported services · rate-limited · no login required</div>
+
+      <div class="progress-block" id="emailProgressBlock">
+        <div class="progress-head">
+          <div class="progress-status" id="emailStatusText">Initializing...</div>
+          <div class="progress-pct" id="emailPctText">0%</div>
+        </div>
+        <div class="progress-bar"><div class="progress-fill" id="emailProgressFill"></div></div>
+        <div class="progress-sub"><div class="progress-sub-fill" id="emailSubFill"></div></div>
+        <div class="log-block" id="emailLogBlock" aria-live="polite"></div>
+      </div>
+
+      <div class="error-block" id="emailErrorBlock" role="alert">
+        <strong>// Error</strong>
+        <span id="emailErrorMsg"></span>
+        <div id="emailErrorHint" style="margin-top:8px;font-size:0.72rem;color:var(--text-muted);font-family:'IBM Plex Mono',monospace;"></div>
+      </div>
+    </div>
+
+    <div class="results-block" id="emailResultsBlock">
+      <div class="profile-strip">
+        <div class="avatar-wrap">
+          <div class="profile-avatar" id="emailAvatar" style="display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Mono',monospace;font-size:1.4rem;color:var(--text-muted);background:var(--bg-subtle);">@</div>
+        </div>
+        <div class="profile-info">
+          <div class="profile-handle"><span class="at"></span><span id="emailTarget"></span></div>
+          <div class="profile-meta" id="emailMeta"></div>
+        </div>
+        <div class="profile-stats">
+          <div class="stat-item">
+            <div class="stat-num red" id="emailFoundCount">&#8212;</div>
+            <div class="stat-label">Found</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-num" id="emailCheckedCount">&#8212;</div>
+            <div class="stat-label">Checked</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="divider" style="margin-top:0;margin-bottom:16px"><div class="divider-label">Account Presence</div></div>
+      <div class="results-head">
+        <div class="results-title">Email Footprint Report</div>
+        <div class="results-count" id="emailResultsCount"></div>
+      </div>
+      <div class="filter-bar">
+        <button class="filter-btn active" id="emailFilterAll" type="button">All</button>
+        <button class="filter-btn" id="emailFilterFound" type="button">Found</button>
+        <button class="filter-btn" id="emailFilterNotFound" type="button">Not Found</button>
+        <button class="filter-btn" id="emailFilterError" type="button">Errors</button>
+      </div>
+      <div class="table-wrap">
+        <div class="table-head" style="grid-template-columns:minmax(160px,1fr) 140px 1fr 90px;min-width:560px;">
+          <div>Service</div><div>Status</div><div>Detail</div><div style="text-align:right">Category</div>
+        </div>
+        <div id="emailTableBody"></div>
+      </div>
+      <div class="actions">
+        <button class="btn red-btn" id="emailBtnCopy" type="button">&#x2398; <span id="emailLblCopy">Copy Found</span></button>
+        <button class="btn" id="emailBtnTxt" type="button">&#x2913; <span id="emailLblTxt">Download TXT</span></button>
+        <button class="btn" id="emailBtnJson" type="button">&#x2913; <span id="emailLblJson">Export JSON</span></button>
+        <button class="btn" id="emailBtnCsv" type="button">&#x2913; <span id="emailLblCsv">Export CSV</span></button>
+        <button class="btn" id="emailBtnNew" type="button">&#x21BA; New Check</button>
+      </div>
+    </div>
+
+    <div class="history-section" id="emailHistorySection" style="display:none;">
+      <div class="divider" style="margin-bottom:16px;"><div class="divider-label">Email Check History</div></div>
+      <div class="history-list" id="emailHistoryList"></div>
+    </div>
+  </div>
 
 </div>
 
 <script src="/app.js" defer></script>
+<script src="/email-tool.js" defer></script>
 </body>
 </html>
