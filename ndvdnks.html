@@ -613,7 +613,8 @@ tr:last-child td{border-bottom:none}
       return;
     }
     const tot = data.totals || {};
-    const set = (id,v)=>{ const e=document.getElementById(id); if(e) e.textContent=fmt(v); };
+    const fmtN = (v)=> (v === null || v === undefined) ? '—' : Number(v).toLocaleString('en-US');
+    const set = (id,v)=>{ const e=document.getElementById(id); if(e) e.textContent=fmtN(v); };
     set('anTotalScans', tot.total_scans); set('anTotalEmails', tot.total_emails);
     set('anUniqueTargets', tot.unique_targets); set('anUniqueRequesters', tot.unique_requesters);
     renderScanLineChart('chartScans', Array.isArray(data.daily)?data.daily:[]);
