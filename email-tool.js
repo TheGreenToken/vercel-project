@@ -172,15 +172,20 @@
     setProgress(8, 'Checking session...');
     log(`Target: ${email}`, 'ok');
     try {
-      setProgress(20, 'Running account presence checks...');
+      setProgress(20, 'Running account presence checks across 119 services...');
       log('Dispatching checks to server modules...', 'ok');
-      const res = await fetch('/api/email-check', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
-      });
+      let fake = 20;
+      const timer = setInterval(() => { fake = Math.min(72, fake + 2); setProgress(fake, 'Checking services...'); }, 900);
+      let res, text;
+      try {
+        res = await fetch('/api/email-check', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email }),
+        });
+        text = await res.text();
+      } finally { clearInterval(timer); }
       setProgress(75, 'Processing results...');
-      const text = await res.text();
       let data;
       try { data = JSON.parse(text); } catch { throw new Error(text.slice(0, 160) || 'Invalid server response'); }
       if (!res.ok || data.error) {
