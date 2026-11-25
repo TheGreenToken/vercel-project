@@ -145,6 +145,16 @@ module.exports = async function handler(req, res) {
   const session = verifySessionToken(rawToken);
   if (!session.ok) return res.status(401).json({ error: session.error || "Login required" });
   if (await isTokenBlacklisted(rawToken)) return res.status(401).json({ error: "Session revoked — please log in again" });
+  // User blacklist (env + KV admin-managed)
+  let userBlocked = false;
+  for (let i = 1; i <= 50; i++) {
+    const id = String(process.env[`BLACKLISTED_USER${i}`] || "").trim();
+    if (id === session.userId) { userBlocked = true; break; }
+  }
+  if (!userBlocked) {
+    try { const bl = await kv.get(`mono:kv_blacklist:${session.userId}`); if (bl) userBlocked = true; } catch (_) {}
+  }
+  if (userBlocked) return res.status(403).json({ error: "Your account is not allowed to use this service." });
 
   let body;
   try {
