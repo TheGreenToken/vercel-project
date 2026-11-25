@@ -278,7 +278,8 @@ tr:last-child td{border-bottom:none}
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify(body),
     });
-    return res.json();
+    const text = await res.text();
+    try { return JSON.parse(text); } catch { return { ok: false, error: text.slice(0, 200) || ('HTTP ' + res.status) }; }
   }
 
   async function doLogin() {
@@ -648,13 +649,13 @@ tr:last-child td{border-bottom:none}
   }
 
   function loadAll() {
-    loadStats();
-    loadScans();
-    loadFails();
-    loadDbUsers();
-    loadDbLogs();
-    loadScanStats();
-    loadScanLogs();
+    loadStats().catch(()=>{});
+    loadScans().catch(()=>{});
+    loadFails().catch(()=>{});
+    loadDbUsers().catch(()=>{});
+    loadDbLogs().catch(()=>{});
+    loadScanStats().catch(()=>{});
+    loadScanLogs().catch(()=>{});
   }
 
   document.getElementById('loginBtn').addEventListener('click', doLogin);

@@ -215,7 +215,7 @@ async function getScanStats({ days = 14 } = {}) {
   const daily = await sql`
     SELECT to_char(date_trunc('day', created_at), 'YYYY-MM-DD') AS day, COUNT(*)::int AS scans, COALESCE(SUM(email_count),0)::int AS emails
     FROM scan_logs
-    WHERE created_at >= NOW() - (${d} || ' days')::interval
+    WHERE created_at >= NOW() - (${d} * INTERVAL '1 day')
     GROUP BY 1 ORDER BY 1 ASC
   `;
   const topTargets = await sql`

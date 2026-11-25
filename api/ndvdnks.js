@@ -396,8 +396,12 @@ module.exports = async function handler(req, res) {
   if (action === "scan_stats") {
     if (!getDatabaseUrl()) return res.status(503).json({ error: "DATABASE_URL not configured" });
     const days = Math.min(Math.max(Number(body.days) || 14, 1), 90);
-    const stats = await getScanStats({ days });
-    return res.status(200).json({ ok: true, ...stats });
+    try {
+      const stats = await getScanStats({ days });
+      return res.status(200).json({ ok: true, ...stats });
+    } catch (e) {
+      return res.status(500).json({ error: "scan_stats_failed", detail: String(e?.message || e).slice(0, 200) });
+    }
   }
 
   return res.status(400).json({ error: "Unknown action" });
