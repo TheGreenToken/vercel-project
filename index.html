@@ -103,7 +103,8 @@ body::after {
   min-height: 36px;
 }
 .auth-brand { display:flex; align-items:center; gap:10px; }
-.auth-mark { width:28px; height:28px; display:block; border:1px solid var(--border-strong); background:#000; }
+.auth-mark { width:28px; height:28px; display:inline-flex; align-items:center; justify-content:center; border:1px solid var(--border-strong); background:#000; flex-shrink:0; }
+.auth-mark svg { display:block; width:28px; height:28px; }
 .auth-right { display:flex; align-items:center; justify-content:flex-end; gap:12px; margin-left:auto; }
 .auth-user {
   display: none;
