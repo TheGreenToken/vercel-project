@@ -234,7 +234,23 @@ tr:last-child td{border-bottom:none}
     </div>
 
     <div class="section">
-      <div class="section-head"><div class="section-title">Blacklisted Users (Env)</div></div>
+      <div class="section-head">
+        <div class="section-title">User Blacklist</div>
+        <div class="section-actions">
+          <button class="btn sm" id="blRefreshBtn" type="button">Refresh</button>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">
+        <input id="blUserId" class="search-input" placeholder="Discord User ID (17-19 digits)" style="min-width:220px;flex:1;" />
+        <input id="blReason" class="search-input" placeholder="Reason (optional)" style="min-width:180px;flex:1;" />
+        <button class="btn sm" id="blAddBtn" type="button">Add to Blacklist</button>
+      </div>
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:0.62rem;letter-spacing:0.1em;color:var(--text-faint);text-transform:uppercase;margin-bottom:8px;">Admin-managed (KV)</div>
+      <div class="table-wrap" style="margin-bottom:16px;"><table>
+        <thead><tr><th>Discord ID</th><th>Reason</th><th>Added</th><th>Action</th></tr></thead>
+        <tbody id="kvBlacklistBody"></tbody>
+      </table></div>
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:0.62rem;letter-spacing:0.1em;color:var(--text-faint);text-transform:uppercase;margin-bottom:8px;">Env-configured (read-only)</div>
       <div class="table-wrap"><table>
         <thead><tr><th>Discord ID</th><th>Reason</th><th>Env Key</th></tr></thead>
         <tbody id="blacklistBody"></tbody>
@@ -357,7 +373,7 @@ tr:last-child td{border-bottom:none}
     } else {
       data.blacklist.forEach(function (u) {
         const tr = document.createElement('tr');
-        tr.innerHTML = `<td class="id">${esc(san(u.id,20))}</td><td class="reason-text">${esc(san(u.reason,100))}</td><td class="id">${esc(san(u.envKey,20))}</td>`;
+        tr.innerHTML = `<td class="id">${esc(san(u.id,20))}</td><td class="reason-text">${esc(san(u.reason,100))}</td><td class="id">${esc(san(u.envKey || 'ENV',20))}</td>`;
         bl.appendChild(tr);
       });
     }
@@ -515,7 +531,8 @@ tr:last-child td{border-bottom:none}
         add('Fail Count', Number(kvRes.failCount || 0));
         add('Confirmed', kvRes.isConfirmed ? 'Yes' : 'No');
         add('Confirmed Until', kvRes.confirmedUntil ? new Date(kvRes.confirmedUntil).toLocaleString() : '—');
-        add('Blacklisted (Env)', kvRes.isBlacklisted ? ('Yes — ' + san(kvRes.blacklistReason || '', 100)) : 'No');
+        const blSrc = kvRes.blacklistSource ? ` [${san(kvRes.blacklistSource,10)}]` : '';
+        add('Blacklisted', kvRes.isBlacklisted ? ('Yes' + blSrc + ' — ' + san(kvRes.blacklistReason || '', 100)) : 'No');
         add('Special User', kvRes.isSpecial ? ('Yes — ' + san(kvRes.specialKey || '', 40)) : 'No');
       } else {
         add('KV Status', kvRes?.error || 'Unavailable');
@@ -649,6 +666,58 @@ tr:last-child td{border-bottom:none}
     });
   }
 
+  async function loadKvBlacklist() {
+    const tbody = document.getElementById('kvBlacklistBody');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="4" class="empty">// loading...</td></tr>';
+    const data = await api('kv_blacklist_list');
+    if (!data.ok) {
+      tbody.innerHTML = `<tr><td colspan="4" class="empty">// ${esc(data.error || 'failed')}</td></tr>`;
+      return;
+    }
+    const entries = Array.isArray(data.entries) ? data.entries : [];
+    if (!entries.length) {
+      tbody.innerHTML = '<tr><td colspan="4" class="empty">// no admin-managed blacklisted users</td></tr>';
+      return;
+    }
+    tbody.innerHTML = '';
+    entries.forEach(e => {
+      const tr = document.createElement('tr');
+      const when = e.addedAt ? new Date(e.addedAt).toLocaleString() : '—';
+      tr.innerHTML = `<td class="id">${esc(san(e.uid,20))}</td><td class="reason-text">${esc(san(e.reason,100))}</td><td>${esc(when)}</td><td><button class="btn sm" data-bl-remove="${esc(san(e.uid,20))}">Remove</button></td>`;
+      tbody.appendChild(tr);
+    });
+    tbody.querySelectorAll('[data-bl-remove]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const uid = btn.getAttribute('data-bl-remove') || '';
+        if (!/^\d{17,19}$/.test(uid)) return;
+        btn.disabled = true;
+        const res = await api('kv_blacklist_remove', { userId: uid });
+        if (res.ok) { showToast('Removed from blacklist'); loadKvBlacklist(); loadStats().catch(()=>{}); }
+        else { showToast(res.error || 'Failed'); btn.disabled = false; }
+      });
+    });
+  }
+
+  async function addKvBlacklist() {
+    const uid = san(document.getElementById('blUserId')?.value || '', 20).replace(/[^\d]/g, '');
+    const reason = san(document.getElementById('blReason')?.value || '', 100).trim();
+    if (!/^\d{17,19}$/.test(uid)) { showToast('Enter a valid Discord ID (17-19 digits)'); return; }
+    const btn = document.getElementById('blAddBtn');
+    if (btn) btn.disabled = true;
+    const res = await api('kv_blacklist_add', { userId: uid, reason: reason || 'Admin blacklisted' });
+    if (btn) btn.disabled = false;
+    if (res.ok) {
+      document.getElementById('blUserId').value = '';
+      document.getElementById('blReason').value = '';
+      showToast('User blacklisted');
+      loadKvBlacklist();
+      loadStats().catch(()=>{});
+    } else {
+      showToast(res.error || 'Failed');
+    }
+  }
+
   function loadAll() {
     loadStats().catch(()=>{});
     loadScans().catch(()=>{});
@@ -657,6 +726,7 @@ tr:last-child td{border-bottom:none}
     loadDbLogs().catch(()=>{});
     loadScanStats().catch(()=>{});
     loadScanLogs().catch(()=>{});
+    loadKvBlacklist().catch(()=>{});
   }
 
   document.getElementById('loginBtn').addEventListener('click', doLogin);
@@ -671,6 +741,10 @@ tr:last-child td{border-bottom:none}
   document.getElementById('scanLogSearch')?.addEventListener('keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); loadScanLogs(); } });
   document.getElementById('lookupBtn')?.addEventListener('click', lookupUser);
   document.getElementById('lookupUserId')?.addEventListener('keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); lookupUser(); } });
+  document.getElementById('blAddBtn')?.addEventListener('click', addKvBlacklist);
+  document.getElementById('blRefreshBtn')?.addEventListener('click', function(){ loadKvBlacklist().catch(()=>{}); });
+  document.getElementById('blReason')?.addEventListener('keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); addKvBlacklist(); } });
+  document.getElementById('blUserId')?.addEventListener('keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); addKvBlacklist(); } });
   document.getElementById('dbUsersExportBtn')?.addEventListener('click', function(){
     if(!lastDbUsers.length) return showToast('No users to export');
     downloadCsv('mono-db-users.csv', ['discordId','username','handle','email','ip','loginCount','firstLoginAt','lastLoginAt'], lastDbUsers);

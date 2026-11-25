@@ -9,6 +9,26 @@ const { upsertUserLogin, getUserByDiscordId, getDatabaseUrl } = require("./db");
 const SESSION_COOKIE = "mono_session";
 const STATE_TTL = 10 * 60; // 10 min
 
+function getEnvBlacklist() {
+  const map = new Map();
+  for (let i = 1; i <= 50; i++) {
+    const id = String(process.env[`BLACKLISTED_USER${i}`] || "").trim();
+    const reason = String(process.env[`BLACKLISTED_USER${i}_REASON`] || "No reason").trim();
+    if (id && /^\d{17,19}$/.test(id)) map.set(id, reason);
+  }
+  return map;
+}
+
+async function isUserBlacklisted(userId) {
+  const envBl = getEnvBlacklist();
+  if (envBl.has(userId)) return { blocked: true, reason: envBl.get(userId) || "Blacklisted" };
+  try {
+    const entry = await kv.get(`mono:kv_blacklist:${userId}`);
+    if (entry) return { blocked: true, reason: String(entry.reason || "Blacklisted").slice(0, 100) };
+  } catch (_) {}
+  return { blocked: false, reason: "" };
+}
+
 function getBaseUrl(req) {
   const env = process.env.APP_BASE_URL;
   if (env) return env.replace(/\/$/, "");
@@ -218,6 +238,13 @@ module.exports = async function handler(req, res) {
         email,
       };
 
+      const bl = await isUserBlacklisted(profile.id);
+      if (bl.blocked) {
+        res.statusCode = 302;
+        res.setHeader("Location", `${baseUrl}/?auth_error=blacklisted`);
+        return res.end();
+      }
+
       await kv.set(`mono:user:${profile.id}`, profile, 30 * 24 * 60 * 60);
 
       // Persist login record in Neon database
@@ -256,6 +283,12 @@ module.exports = async function handler(req, res) {
     if (req.method !== "GET") return json(res, 405, { error: "Method Not Allowed" });
     const session = getSession(req);
     if (!session.ok) return json(res, 200, { authenticated: false });
+
+    const bl = await isUserBlacklisted(session.userId);
+    if (bl.blocked) {
+      setCookie(res, SESSION_COOKIE, "", { httpOnly: true, sameSite: "Lax", maxAge: 0, secure: true });
+      return json(res, 200, { authenticated: false, error: "blacklisted" });
+    }
 
     let profile = await kv.get(`mono:user:${session.userId}`).catch(() => null);
     if (!profile || typeof profile !== "object") {

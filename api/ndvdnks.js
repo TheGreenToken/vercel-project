@@ -170,14 +170,17 @@ module.exports = async function handler(req, res) {
   if (action === "user_lookup") {
     const uid = s(body.userId, 20).replace(/[^\d]/g, "");
     if (!uid || !/^\d{17,19}$/.test(uid)) return res.status(400).json({ error: "Invalid user ID" });
-    const [sessionKey, failCount, scanIpKey, blacklistEntry] = await Promise.all([
+    const [sessionKey, failCount, scanIpKey, kvBlacklistEntry] = await Promise.all([
       kv.get(`mono:token_ip:${uid}`).catch(() => null),
       kv.get(`mono:fails:${uid}`).catch(() => null),
       kv.get(`mono:confirmed:${uid}`).catch(() => null),
-      kv.get(`mono:blacklist:${uid}`).catch(() => null),
+      kv.get(`mono:kv_blacklist:${uid}`).catch(() => null),
     ]);
     const blacklist = getBlacklist();
     const special   = getSpecialUsers();
+    const envBl = blacklist.has(uid);
+    const kvBl  = !!kvBlacklistEntry;
+    const blReason = envBl ? blacklist.get(uid) : (kvBlacklistEntry?.reason || "");
     return res.status(200).json({
       ok: true,
       userId:        esc(uid),
@@ -186,8 +189,9 @@ module.exports = async function handler(req, res) {
       failCount:     Number(failCount) || 0,
       isConfirmed:   !!scanIpKey,
       confirmedUntil: scanIpKey?.confirmedUntil || null,
-      isBlacklisted: blacklist.has(uid),
-      blacklistReason: blacklist.has(uid) ? esc(blacklist.get(uid)) : null,
+      isBlacklisted: envBl || kvBl,
+      blacklistReason: (envBl || kvBl) ? esc(blReason) : null,
+      blacklistSource: envBl && kvBl ? "env+kv" : (envBl ? "env" : (kvBl ? "kv" : null)),
       isSpecial:     special.has(uid),
       specialKey:    special.has(uid) ? esc(special.get(uid)) : null,
     });
