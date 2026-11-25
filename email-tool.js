@@ -72,19 +72,21 @@
     if (s === 'found') return 'Found';
     if (s === 'not_found') return 'Not Found';
     if (s === 'rate_limit') return 'Rate Limit';
+    if (s === 'inconclusive') return 'Inconclusive';
     return 'Error';
   }
   function statusClass(s) {
     if (s === 'found') return 'found';
     if (s === 'not_found') return 'notfound';
     if (s === 'rate_limit') return 'ratelimit';
+    if (s === 'inconclusive') return 'inconclusive';
     return 'error';
   }
 
   function filteredResults() {
     if (currentFilter === 'found') return currentResults.filter(r => r.status === 'found');
     if (currentFilter === 'not_found') return currentResults.filter(r => r.status === 'not_found');
-    if (currentFilter === 'error') return currentResults.filter(r => r.status === 'error' || r.status === 'rate_limit');
+    if (currentFilter === 'error') return currentResults.filter(r => r.status === 'error' || r.status === 'rate_limit' || r.status === 'inconclusive');
     return currentResults;
   }
 
