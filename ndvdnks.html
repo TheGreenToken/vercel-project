@@ -122,11 +122,51 @@ tr:last-child td{border-bottom:none}
       <div class="stat"><div class="stat-val" id="stRateLimits">—</div><div class="stat-lbl">Rate Limit Keys</div></div>
       <div class="stat"><div class="stat-val" id="stDbUsers">—</div><div class="stat-lbl">DB Users</div></div>
       <div class="stat"><div class="stat-val" id="stDbLogs">—</div><div class="stat-lbl">DB Login Logs</div></div>
+      <div class="stat"><div class="stat-val" id="stDbScanLogs">—</div><div class="stat-lbl">DB Scan Logs</div></div>
     </div>
 
     <div class="section">
       <div class="section-head"><div class="section-title">Environment</div></div>
       <div class="env-grid" id="envGrid"></div>
+    </div>
+
+    <div class="section">
+      <div class="section-head">
+        <div class="section-title">Scan Analytics</div>
+        <div class="section-actions">
+          <button class="btn sm" id="scanStatsRefreshBtn" type="button">Refresh</button>
+        </div>
+      </div>
+      <div class="grid" style="margin-bottom:16px;">
+        <div class="stat"><div class="stat-val" id="anTotalScans">—</div><div class="stat-lbl">Total Scans</div></div>
+        <div class="stat"><div class="stat-val" id="anTotalEmails">—</div><div class="stat-lbl">Emails Found</div></div>
+        <div class="stat"><div class="stat-val" id="anUniqueTargets">—</div><div class="stat-lbl">Unique Targets</div></div>
+        <div class="stat"><div class="stat-val" id="anUniqueRequesters">—</div><div class="stat-lbl">Unique Requesters</div></div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;">
+        <div style="border:1px solid var(--border);background:var(--bg-elev);padding:16px;">
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:0.62rem;letter-spacing:0.1em;color:var(--text-faint);text-transform:uppercase;margin-bottom:12px;">Scans / Day</div>
+          <div id="chartScans" style="width:100%;height:180px;"></div>
+        </div>
+        <div style="border:1px solid var(--border);background:var(--bg-elev);padding:16px;">
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:0.62rem;letter-spacing:0.1em;color:var(--text-faint);text-transform:uppercase;margin-bottom:12px;">Top Targets</div>
+          <div id="chartTargets" style="width:100%;min-height:180px;"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-head">
+        <div class="section-title">Scan Logs (Neon DB)</div>
+        <div class="section-actions">
+          <input id="scanLogSearch" class="search-input" placeholder="Search target/requester/ip..." />
+          <button class="btn sm" id="scanLogsRefreshBtn" type="button">Refresh</button>
+        </div>
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Time</th><th>Target</th><th>Requester</th><th>IP / Geo</th><th>Result</th><th>Mode</th></tr></thead>
+        <tbody id="scanLogsBody"></tbody>
+      </table></div>
     </div>
 
     <div class="section">
@@ -285,6 +325,7 @@ tr:last-child td{border-bottom:none}
     document.getElementById('stRateLimits').textContent     = data.rateLimitKeys;
     const dbU = document.getElementById('stDbUsers'); if (dbU) dbU.textContent = data.dbUsers ?? '—';
     const dbL = document.getElementById('stDbLogs');  if (dbL) dbL.textContent = data.dbLoginLogs ?? '—';
+    const dbS = document.getElementById('stDbScanLogs'); if (dbS) dbS.textContent = data.dbScanLogs ?? '—';
 
     const envGrid = document.getElementById('envGrid');
     envGrid.innerHTML = '';
@@ -523,12 +564,97 @@ tr:last-child td{border-bottom:none}
     }
   }
 
+  let lastScanLogs=[];
+  function renderScanLineChart(containerId, points) {
+    const el = document.getElementById(containerId);
+    if (!el) return;
+    if (!points.length) { el.innerHTML = '<div class="empty" style="padding:40px 0">// no scan data yet</div>'; return; }
+    const w = Math.max(el.clientWidth || 320, 320), h = 180, pad = {l:28,r:8,t:10,b:24};
+    const max = Math.max(1, ...points.map(p=>p.scans));
+    const innerW = w - pad.l - pad.r, innerH = h - pad.t - pad.b;
+    const x = i => pad.l + (points.length===1 ? innerW/2 : (i/(points.length-1))*innerW);
+    const y = v => pad.t + innerH - (v/max)*innerH;
+    const line = points.map((p,i)=>`${i===0?'M':'L'}${x(i).toFixed(1)},${y(p.scans).toFixed(1)}`).join(' ');
+    const area = `${line} L${x(points.length-1).toFixed(1)},${(pad.t+innerH).toFixed(1)} L${x(0).toFixed(1)},${(pad.t+innerH).toFixed(1)} Z`;
+    const grid = [0,0.5,1].map(f=>{ const gv=max*f; const yy=y(gv); return `<line x1="${pad.l}" y1="${yy}" x2="${w-pad.r}" y2="${yy}" stroke="#222" stroke-width="1"/><text x="${pad.l-4}" y="${yy+3}" text-anchor="end" font-size="9" fill="#555" font-family="IBM Plex Mono,monospace">${Math.round(gv)}</text>`; }).join('');
+    const dots = points.map((p,i)=>`<g><circle cx="${x(i).toFixed(1)}" cy="${y(p.scans).toFixed(1)}" r="3" fill="#fff"><title>${esc(p.day)}: ${p.scans} scans, ${p.emails} emails</title></circle></g>`).join('');
+    const labels = points.map((p,i)=>{
+      const every = points.length>10 ? Math.ceil(points.length/6) : 1;
+      if (i%every!==0 && i!==points.length-1) return '';
+      const d=p.day.slice(5);
+      return `<text x="${x(i).toFixed(1)}" y="${h-6}" text-anchor="middle" font-size="9" fill="#555" font-family="IBM Plex Mono,monospace">${esc(d)}</text>`;
+    }).join('');
+    el.innerHTML = `<svg width="100%" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="display:block">${grid}<path d="${area}" fill="rgba(255,255,255,0.06)"></path><path d="${line}" fill="none" stroke="#fff" stroke-width="1.5"></path>${dots}${labels}</svg>`;
+  }
+
+  function renderTargetBars(containerId, targets) {
+    const el = document.getElementById(containerId);
+    if (!el) return;
+    if (!targets.length) { el.innerHTML = '<div class="empty" style="padding:40px 0">// no targets yet</div>'; return; }
+    const max = Math.max(1, ...targets.map(t=>t.scans));
+    el.innerHTML = targets.map(t=>{
+      const pct = Math.max(2, (t.scans/max)*100);
+      return `<div style="display:grid;grid-template-columns:minmax(80px,1fr) 2fr 36px;gap:8px;align-items:center;margin-bottom:10px;">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:0.68rem;color:#ccc;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(t.target)}">${esc(t.target)}</div>
+        <div style="height:8px;background:#141414;border:1px solid #222;overflow:hidden"><div style="height:100%;width:${pct}%;background:#fff"></div></div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:0.68rem;color:#888;text-align:right">${t.scans}</div>
+      </div>`;
+    }).join('');
+  }
+
+  async function loadScanStats() {
+    const data = await api('scan_stats', { days: 14 });
+    if (!data.ok) {
+      const msg = data.error === 'DATABASE_URL not configured' ? 'DB not configured' : (data.error || 'Unavailable');
+      ['anTotalScans','anTotalEmails','anUniqueTargets','anUniqueRequesters'].forEach(id=>{ const e=document.getElementById(id); if(e) e.textContent='—'; });
+      const c1=document.getElementById('chartScans'); if(c1) c1.innerHTML=`<div class="empty" style="padding:40px 0">// ${esc(msg)}</div>`;
+      const c2=document.getElementById('chartTargets'); if(c2) c2.innerHTML=`<div class="empty" style="padding:40px 0">// ${esc(msg)}</div>`;
+      return;
+    }
+    const tot = data.totals || {};
+    const set = (id,v)=>{ const e=document.getElementById(id); if(e) e.textContent=fmt(v); };
+    set('anTotalScans', tot.total_scans); set('anTotalEmails', tot.total_emails);
+    set('anUniqueTargets', tot.unique_targets); set('anUniqueRequesters', tot.unique_requesters);
+    renderScanLineChart('chartScans', Array.isArray(data.daily)?data.daily:[]);
+    renderTargetBars('chartTargets', Array.isArray(data.topTargets)?data.topTargets:[]);
+  }
+
+  async function loadScanLogs() {
+    const tbody = document.getElementById('scanLogsBody');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="6" class="empty">// loading...</td></tr>';
+    const search = san(document.getElementById('scanLogSearch')?.value || '', 100).trim();
+    const data = await api('scan_logs', { search, limit: 50, offset: 0 });
+    if (!data.ok) {
+      const msg = data.error === 'DATABASE_URL not configured' ? '// DATABASE_URL not configured' : `// ${esc(data.error||'failed')}`;
+      tbody.innerHTML = `<tr><td colspan="6" class="empty">${msg}</td></tr>`;
+      lastScanLogs=[]; return;
+    }
+    lastScanLogs = Array.isArray(data.logs)?data.logs:[];
+    if (!lastScanLogs.length) { tbody.innerHTML='<tr><td colspan="6" class="empty">// no scan logs</td></tr>'; return; }
+    tbody.innerHTML = '';
+    lastScanLogs.forEach(r => {
+      const tr = document.createElement('tr');
+      const when = r.createdAt ? new Date(r.createdAt).toLocaleString() : '—';
+      const geo = [r.city,r.country].filter(Boolean).join(', ');
+      const ipGeo = [r.requesterIp, geo].filter(Boolean).join(' · ') || '—';
+      const who = [r.requesterName, r.requesterId].filter(Boolean).join(' / ') || '—';
+      const res = `${r.emailCount} emails · ${r.repoCount} repos`;
+      const mode = `${r.scanDepth||'normal'}${r.fromCache?' · cache':''}`;
+      const cells = [when, r.target||'—', who, ipGeo, res, mode];
+      cells.forEach((c,i)=>{ const td=document.createElement('td'); td.textContent=c; if(i===0) td.className='id'; td.style.whiteSpace='normal'; td.style.wordBreak='break-word'; tr.appendChild(td); });
+      tbody.appendChild(tr);
+    });
+  }
+
   function loadAll() {
     loadStats();
     loadScans();
     loadFails();
     loadDbUsers();
     loadDbLogs();
+    loadScanStats();
+    loadScanLogs();
   }
 
   document.getElementById('loginBtn').addEventListener('click', doLogin);
@@ -538,6 +664,9 @@ tr:last-child td{border-bottom:none}
   document.getElementById('dbUsersRefreshBtn')?.addEventListener('click', function(){ loadDbUsers(); });
   document.getElementById('dbLogsRefreshBtn')?.addEventListener('click', function(){ loadDbLogs(); });
   document.getElementById('dbUserSearch')?.addEventListener('keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); loadDbUsers(); } });
+  document.getElementById('scanStatsRefreshBtn')?.addEventListener('click', function(){ loadScanStats(); showToast('Scan stats refreshed'); });
+  document.getElementById('scanLogsRefreshBtn')?.addEventListener('click', function(){ loadScanLogs(); showToast('Scan logs refreshed'); });
+  document.getElementById('scanLogSearch')?.addEventListener('keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); loadScanLogs(); } });
   document.getElementById('lookupBtn')?.addEventListener('click', lookupUser);
   document.getElementById('lookupUserId')?.addEventListener('keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); lookupUser(); } });
   document.getElementById('dbUsersExportBtn')?.addEventListener('click', function(){

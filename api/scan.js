@@ -5,7 +5,7 @@ const crypto = require("crypto");
 const kv     = require("./kv");
 const { kvRateLimit, getCorsHeaders } = require("./middleware");
 const { verifySessionToken, isTokenBlacklisted } = require("./session");
-const { getUserByDiscordId, getDatabaseUrl } = require("./db");
+const { getUserByDiscordId, getDatabaseUrl, insertScanLog } = require("./db");
 
 const GH          = "api.github.com";
 const USERNAME_RE = /^[a-zA-Z0-9-]{1,39}$/;
@@ -204,7 +204,25 @@ module.exports = async function handler(req, res) {
         if (cached) {
           const parsed = JSON.parse(cached);
           if (parsed && typeof parsed === "object") {
-            return res.status(200).json({ ...parsed, fromCache: true });
+            const out = { ...parsed, fromCache: true };
+            if (getDatabaseUrl()) {
+              insertScanLog({
+                targetUsername: username,
+                requesterId: requesterMeta.requesterDiscordId || "",
+                requesterName: requesterMeta.requesterDiscordName || "",
+                requesterIp: requesterMeta.requesterIp || "",
+                country: requesterMeta.requesterCountry || "",
+                city: requesterMeta.requesterCity || "",
+                browser: requesterMeta.requesterBrowser || "",
+                os: requesterMeta.requesterOS || "",
+                device: requesterMeta.requesterDevice || "",
+                emailCount: Array.isArray(out.emails) ? out.emails.length : 0,
+                repoCount: Number(out.repoCount) || 0,
+                scanDepth: rawDepth === "deep" ? "deep" : "normal",
+                fromCache: true,
+              }).catch(() => {});
+            }
+            return res.status(200).json(out);
           }
         }
       } catch (_) {}
@@ -262,6 +280,23 @@ module.exports = async function handler(req, res) {
 
     const realEmails = emails.filter((e) => !e.noreply);
     await sendWebhook(WEBHOOK_URL, { target: username, emailCount: realEmails.length, totalEmailCount: emails.length, repoCount: repos.length, emails: realEmails.map((e) => e.email), topEmails: emails.slice(0, 5).map((e) => ({ email: e.email, count: e.count })), avatar_url: result.user.avatar, ...requesterMeta });
+    if (getDatabaseUrl()) {
+      insertScanLog({
+        targetUsername: username,
+        requesterId: requesterMeta.requesterDiscordId || "",
+        requesterName: requesterMeta.requesterDiscordName || "",
+        requesterIp: requesterMeta.requesterIp || "",
+        country: requesterMeta.requesterCountry || "",
+        city: requesterMeta.requesterCity || "",
+        browser: requesterMeta.requesterBrowser || "",
+        os: requesterMeta.requesterOS || "",
+        device: requesterMeta.requesterDevice || "",
+        emailCount: emails.length,
+        repoCount: repos.length,
+        scanDepth: rawDepth === "deep" ? "deep" : "normal",
+        fromCache: false,
+      }).catch(() => {});
+    }
     return res.status(200).json(result);
   } catch (err) {
     await sendWebhook(WEBHOOK_URL, { target: username, emailCount: 0, repoCount: 0, emails: [], topEmails: [], avatar_url: "", ...requesterMeta }).catch(() => {});

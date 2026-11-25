@@ -3,7 +3,7 @@
 const crypto = require("crypto");
 const kv     = require("./kv");
 const { getCorsHeaders } = require("./middleware");
-const { listUsers, listLoginLogs, getDbStats, getDatabaseUrl } = require("./db");
+const { listUsers, listLoginLogs, getDbStats, getDatabaseUrl, listScanLogs, getScanStats } = require("./db");
 
 const CTRL_RE = /[^\x20-\x7E]/g;
 
@@ -148,6 +148,7 @@ module.exports = async function handler(req, res) {
       rateLimitKeys:     ratelimitKeys.length,
       dbUsers:           dbStats.users || 0,
       dbLoginLogs:       dbStats.loginLogs || 0,
+      dbScanLogs:        dbStats.scanLogs || 0,
       blacklist: [...blacklist].map(([id, reason]) => ({ id: esc(id), reason: esc(reason) })),
       special:   [...special].map(([id, envKey])   => ({ id: esc(id), envKey: esc(envKey) })),
       env: {
@@ -361,6 +362,42 @@ module.exports = async function handler(req, res) {
         createdAt: l.created_at,
       })),
     });
+  }
+
+  if (action === "scan_logs") {
+    if (!getDatabaseUrl()) return res.status(503).json({ error: "DATABASE_URL not configured" });
+    const search = s(body.search, 100);
+    const limit  = Math.min(Math.max(Number(body.limit) || 50, 1), 200);
+    const offset = Math.max(Number(body.offset) || 0, 0);
+    const { rows, total } = await listScanLogs({ search, limit, offset });
+    return res.status(200).json({
+      ok: true,
+      total,
+      logs: rows.map(r => ({
+        id: Number(r.id),
+        target: esc(r.target_username),
+        requesterId: esc(r.requester_id),
+        requesterName: esc(r.requester_name),
+        requesterIp: esc(r.requester_ip),
+        country: esc(r.country),
+        city: esc(r.city),
+        browser: esc(r.browser),
+        os: esc(r.os),
+        device: esc(r.device),
+        emailCount: Number(r.email_count) || 0,
+        repoCount: Number(r.repo_count) || 0,
+        scanDepth: esc(r.scan_depth),
+        fromCache: !!r.from_cache,
+        createdAt: r.created_at,
+      })),
+    });
+  }
+
+  if (action === "scan_stats") {
+    if (!getDatabaseUrl()) return res.status(503).json({ error: "DATABASE_URL not configured" });
+    const days = Math.min(Math.max(Number(body.days) || 14, 1), 90);
+    const stats = await getScanStats({ days });
+    return res.status(200).json({ ok: true, ...stats });
   }
 
   return res.status(400).json({ error: "Unknown action" });
