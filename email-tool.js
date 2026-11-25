@@ -205,7 +205,10 @@
       emailFoundCount.textContent = String(data.found ?? currentResults.filter(r=>r.status==='found').length);
       emailCheckedCount.textContent = String(data.checked ?? currentResults.length);
       const foundNames = currentResults.filter(r=>r.status==='found').map(r=>r.name).slice(0,6);
-      emailMeta.textContent = foundNames.length ? `Found on: ${foundNames.join(', ')}${currentResults.filter(r=>r.status==='found').length>6?'…':''}` : 'No public account presence detected by current modules';
+      const inconclusive = data.inconclusive ?? currentResults.filter(r=>r.status==='inconclusive').length;
+      emailMeta.textContent = foundNames.length
+        ? `Found on: ${foundNames.join(', ')}${currentResults.filter(r=>r.status==='found').length>6?'…':''}${inconclusive ? ` · ${inconclusive} inconclusive` : ''}`
+        : `No public account presence detected by current modules${inconclusive ? ` · ${inconclusive} inconclusive` : ''}`;
       setProgress(100, 'Complete');
       log(`Done: ${data.found}/${data.checked} found in ${data.durationMs}ms`, 'hit');
       resultsBlock.classList.add('show');
