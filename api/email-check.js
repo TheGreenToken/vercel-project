@@ -32,36 +32,29 @@ async function check_atlassian(email) {
   try {
     const url = "https://id.atlassian.com/rest/check-username";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = [];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -73,7 +66,7 @@ async function check_gravatar(email) {
     if (r.status === 200) { const d = await r.json().catch(()=>null); const n=d?.entry?.[0]?.displayName||d?.entry?.[0]?.preferredUsername||"Profile exists"; return { ...meta, status:"found", detail:String(n).slice(0,80)}; }
     if (r.status === 404) return { ...meta, status:"not_found", detail:"No public profile" };
     if (r.status === 429) return { ...meta, status:"rate_limit", detail:"Rate limited" };
-    return { ...meta, status:"error", detail:`HTTP ${r.status}` };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
   } catch { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
@@ -83,36 +76,29 @@ async function check_voxmedia(email) {
   try {
     const url = "https://auth.voxmedia.com/chorus_auth/email_valid.json";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = [];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -123,7 +109,7 @@ async function check_wordpress(email) {
     if (r.status===200) return { ...meta, status:"found", detail:"Account exists" };
     if (r.status===404) return { ...meta, status:"not_found", detail:"No account found" };
     if (r.status===429) return { ...meta, status:"rate_limit", detail:"Rate limited" };
-    return { ...meta, status:"error", detail:`HTTP ${r.status}` };
+    return { ...meta, status:"inconclusive", detail:`HTTP ${r.status}` };
   } catch { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
@@ -133,36 +119,29 @@ async function check_aboutme(email) {
   try {
     const url = "https://about.me/n/signup";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = [];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -171,36 +150,29 @@ async function check_amocrm(email) {
   try {
     const url = "https://www.amocrm.com/account/check_login.php";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = [];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -209,36 +181,29 @@ async function check_axonaut(email) {
   try {
     const url = "https://axonaut.com/onboarding/?email=";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = [];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -247,36 +212,29 @@ async function check_hubspot(email) {
   try {
     const url = "https://api.hubspot.com/login-api/v1/login";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = [];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -285,36 +243,29 @@ async function check_insightly(email) {
   try {
     const url = "https://accounts.insightly.com/signup/isemailvalid";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = ["An account exists for this address. Use another address or"];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -323,36 +274,29 @@ async function check_nimble(email) {
   try {
     const url = "https://www.nimble.com/lib/register.php?email=";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = [];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -361,36 +305,29 @@ async function check_nocrm(email) {
   try {
     const url = "https://register.nocrm.io/register/check_trial_duplicate?email=";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = [];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -399,36 +336,29 @@ async function check_nutshell(email) {
   try {
     const url = "https://app.nutshell.com/auth";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = [];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -437,36 +367,29 @@ async function check_pipedrive(email) {
   try {
     const url = "https://app.pipedrive.com/signup-service/start";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = [];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -475,36 +398,29 @@ async function check_teamleader(email) {
   try {
     const url = "https://focus.teamleader.eu/app/emails/availability";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = [];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -513,36 +429,29 @@ async function check_zoho(email) {
   try {
     const url = "https://accounts.zoho.com/signin/v2/lookup/";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = [];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -551,36 +460,29 @@ async function check_buymeacoffee(email) {
   try {
     const url = "https://www.buymeacoffee.com/auth/validate_email_and_password";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = [];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -589,36 +491,29 @@ async function check_babeshows(email) {
   try {
     const url = "https://www.babeshows.co.uk/xmlhttp.php";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = ["email address that is already in use by another member."];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -627,36 +522,29 @@ async function check_badeggsonline(email) {
   try {
     const url = "https://www.badeggsonline.com/beo2-forum/xmlhttp.php";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = ["email address that is already in use by another member."];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -665,36 +553,29 @@ async function check_biosmods(email) {
   try {
     const url = "https://bios-mods.com/forum/xmlhttp.php";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = ["email address that is already in use by another member."];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -703,36 +584,29 @@ async function check_biotechnologyforums(email) {
   try {
     const url = "https://biotechnologyforums.com/xmlhttp.php";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = ["email address that is already in use by another member."];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -741,36 +615,29 @@ async function check_blackworldforum(email) {
   try {
     const url = "http://blackworldforum.com/xmlhttp.php";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = ["email address that is already in use by another member."];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -779,36 +646,29 @@ async function check_blitzortung(email) {
   try {
     const url = "https://forum.blitzortung.org/xmlhttp.php";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = ["email address that is already in use by another member."];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -817,36 +677,29 @@ async function check_bluegrassrivals(email) {
   try {
     const url = "http://bluegrassrivals.com/forum/xmlhttp.php";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = ["email address that is already in use by another member."];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -855,36 +708,29 @@ async function check_cambridgemt(email) {
   try {
     const url = "https://discussion.cambridge-mt.com/xmlhttp.php";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = ["email address that is already in use by another member."];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -893,36 +739,29 @@ async function check_chinaphonearena(email) {
   try {
     const url = "https://www.chinaphonearena.com/forum/xmlhttp.php";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = ["email address that is already in use by another member."];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -931,36 +770,29 @@ async function check_clashfarmer(email) {
   try {
     const url = "https://www.clashfarmer.com/forum/xmlhttp.php";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = ["email address that is already in use by another member."];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -969,36 +801,29 @@ async function check_codeigniter(email) {
   try {
     const url = "https://forum.codeigniter.com/xmlhttp.php";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = ["email address that is already in use by another member."];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -1007,36 +832,29 @@ async function check_cpaelites(email) {
   try {
     const url = "https://www.cpaelites.com/xmlhttp.php";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = ["email address that is already in use by another member."];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -1045,36 +863,29 @@ async function check_cpahero(email) {
   try {
     const url = "https://www.cpahero.com/xmlhttp.php";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = ["email address that is already in use by another member."];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -1083,36 +894,29 @@ async function check_cracked_to(email) {
   try {
     const url = "https://cracked.to/xmlhttp.php";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = ["email address that is already in use by another member."];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -1121,36 +925,29 @@ async function check_demonforums(email) {
   try {
     const url = "https://demonforums.net/xmlhttp.php";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = ["email address that is already in use by another member."];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -1159,36 +956,29 @@ async function check_freiberg(email) {
   try {
     const url = "https://drachenhort.user.stunet.tu-freiberg.de/xmlhttp.php";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = ["email address that is already in use by another member."];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -1197,36 +987,29 @@ async function check_koditv(email) {
   try {
     const url = "https://forum.kodi.tv/xmlhttp.php";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = ["email address that is already in use by another member."];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -1235,36 +1018,29 @@ async function check_mybb(email) {
   try {
     const url = "https://community.mybb.com/xmlhttp.php";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = ["email address that is already in use by another member."];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -1273,36 +1049,29 @@ async function check_nattyornot(email) {
   try {
     const url = "https://nattyornotforum.nattyornot.com/xmlhttp.php";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = ["email address that is already in use by another member."];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -1311,36 +1080,29 @@ async function check_ndemiccreations(email) {
   try {
     const url = "https://forum.ndemiccreations.com/xmlhttp.php";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = ["email address that is already in use by another member."];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -1349,36 +1111,29 @@ async function check_nextpvr(email) {
   try {
     const url = "https://forums.nextpvr.com/xmlhttp.php";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = ["email address that is already in use by another member."];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -1387,36 +1142,29 @@ async function check_onlinesequencer(email) {
   try {
     const url = "https://onlinesequencer.net/forum/xmlhttp.php";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = ["email address that is already in use by another member."];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -1425,36 +1173,29 @@ async function check_thecardboard(email) {
   try {
     const url = "https://thecardboard.org/board/xmlhttp.php";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = ["email address that is already in use by another member."];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -1463,36 +1204,29 @@ async function check_therianguide(email) {
   try {
     const url = "https://forums.therian-guide.com/xmlhttp.php";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = ["email address that is already in use by another member."];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -1501,36 +1235,29 @@ async function check_thevapingforum(email) {
   try {
     const url = "http://www.thevapingforum.com/xmlhttp.php";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = ["email address that is already in use by another member."];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -1539,36 +1266,29 @@ async function check_coroflot(email) {
   try {
     const url = "https://www.coroflot.com/home/signup_email_check";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = [];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -1577,36 +1297,29 @@ async function check_freelancer(email) {
   try {
     const url = "https://www.freelancer.com/api/users/0.1/users/check?compact=true&new_errors=true";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = ["EMAIL_ALREADY_IN_USE"];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -1615,36 +1328,29 @@ async function check_seoclerks(email) {
   try {
     const url = "https://www.seoclerks.com/signup/check";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = [];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -1653,36 +1359,29 @@ async function check_diigo(email) {
   try {
     const url = "https://www.diigo.com/user_mana2/check_email";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = [];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -1691,36 +1390,29 @@ async function check_duolingo(email) {
   try {
     const url = "https://www.duolingo.com/2017-06-30/users?email=";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = [];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -1729,36 +1421,29 @@ async function check_quora(email) {
   try {
     const url = "https://fr.quora.com/webnode2/server_call_POST";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = [];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -1767,36 +1452,29 @@ async function check_google(email) {
   try {
     const url = "https://accounts.google.com/_/signup/webusernameavailability";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = [];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -1805,36 +1483,29 @@ async function check_laposte(email) {
   try {
     const url = "https://www.laposte.fr/authentification";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = [];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -1843,36 +1514,29 @@ async function check_mail_ru(email) {
   try {
     const url = "https://account.mail.ru/api/v1/user/password/restore";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = [];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -1918,36 +1582,29 @@ async function check_ello(email) {
   try {
     const url = "https://ello.co/api/v2/availability";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = [];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -1956,36 +1613,29 @@ async function check_flickr(email) {
   try {
     const url = "https://identity-api.flickr.com/migration";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = [];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -1994,36 +1644,29 @@ async function check_komoot(email) {
   try {
     const url = "https://account.komoot.com/v1/signin";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = [];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -2032,36 +1675,29 @@ async function check_rambler(email) {
   try {
     const url = "https://id.rambler.ru/jsonrpc";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = [];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -2070,36 +1706,29 @@ async function check_sporcle(email) {
   try {
     const url = "https://www.sporcle.com/auth/ajax/verify.php";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = ["account already exists with this email"];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -2108,36 +1737,29 @@ async function check_caringbridge(email) {
   try {
     const url = "https://www.caringbridge.org/signin";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = [];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -2146,36 +1768,29 @@ async function check_sevencups(email) {
   try {
     const url = "https://www.7cups.com/listener/CreateAccount.php";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = ["Account already exists with this email address"];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -2184,36 +1799,29 @@ async function check_blip(email) {
   try {
     const url = "https://blip.fm/signup/save";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = ["That email address is already in use."];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -2222,36 +1830,29 @@ async function check_lastfm(email) {
   try {
     const url = "https://www.last.fm/join/partial/validate";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = [];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -2260,36 +1861,29 @@ async function check_smule(email) {
   try {
     const url = "https://www.smule.com/user/check_email";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = [];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -2298,36 +1892,29 @@ async function check_soundcloud(email) {
   try {
     const url = "https://soundcloud.com/octobersveryown";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = [];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -2337,7 +1924,7 @@ async function check_spotify(email) {
     const r = await fetchWithTimeout(`https://spclient.wg.spotify.com/signup/public/v1/account?validate=1&email=${encodeURIComponent(email)}`, { headers:{'User-Agent':'Mozilla/5.0'} }, 8000);
     if (r.status===200){ const d=await r.json().catch(()=>({})); if(d?.status===20) return {...meta,status:"found",detail:"Account exists"}; if(d?.status===1) return {...meta,status:"not_found",detail:"No account found"}; }
     if (r.status===429) return {...meta,status:"rate_limit",detail:"Rate limited"};
-    return {...meta,status:"error",detail:`HTTP ${r.status}`};
+    return {...meta,status:"inconclusive",detail:"Could not verify"};
   } catch { return {...meta,status:"error",detail:"Request failed"}; }
 }
 
@@ -2347,36 +1934,29 @@ async function check_tunefind(email) {
   try {
     const url = "https://www.tunefind.com/user/join";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = [];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -2385,36 +1965,29 @@ async function check_rocketreach(email) {
   try {
     const url = "https://rocketreach.co/signup";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = [];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -2423,36 +1996,29 @@ async function check_venmo(email) {
   try {
     const url = "https://venmo.com/api/v5/users";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = ["That email is already registered in our system."];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -2461,50 +2027,49 @@ async function check_anydo(email) {
   try {
     const url = "https://sm-prod2.any.do/check_email";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = [];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
 async function check_evernote(email) {
   const meta = { name: "evernote", domain: "evernote.com", category: "productivity", method: "login" };
   try {
-    const r = await fetchWithTimeout(`https://www.evernote.com/Login.action?username=${encodeURIComponent(email)}&evaluateUsername=&checkUsername=true`, { headers: { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/javascript, */*; q=0.01", "X-Requested-With": "XMLHttpRequest" } }, 8000);
-    const txt = await r.text().catch(()=> "");
-    const low = txt.toLowerCase();
-    if (low.includes("usepasswordauth") || low.includes('"valid":true')) return { ...meta, status: "found", detail: "Account exists" };
-    if (low.includes("incorrectemail") || low.includes("displaymessage")) return { ...meta, status: "not_found", detail: "No account found" };
-    if (r.status === 429) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch { return { ...meta, status: "error", detail: "Request failed" }; }
+    const r = await fetchWithTimeout(`https://www.evernote.com/Login.action`, { headers: { "User-Agent": "Mozilla/5.0" } }, 8000);
+    const html = await r.text().catch(()=> "");
+    const hpts = (html.match(/id="hpts"\.value = "([^"]+)"/) || [])[1] || '';
+    const hptsh = (html.match(/id="hptsh"\.value = "([^"]+)"/) || [])[1] || '';
+    const sp = (html.match(/name="_sourcePage" value="([^"]+)"/) || [])[1] || '';
+    const fp = (html.match(/name="__fp" value="([^"]+)"/) || [])[1] || '';
+    const body = new URLSearchParams({ username: email, evaluateUsername: '', hpts, hptsh, analyticsLoginOrigin: 'login_action', clipperFlow: 'false', showSwitchService: 'true', usernameImmutable: 'false', _sourcePage: sp, __fp: fp }).toString();
+    const r2 = await fetchWithTimeout('https://www.evernote.com/Login.action', { method:'POST', headers:{'User-Agent':'Mozilla/5.0','Content-Type':'application/x-www-form-urlencoded; charset=UTF-8'}, body }, 8000);
+    const txt = await r2.text().catch(()=> "");
+    if (txt.includes('usePasswordAuth')) return { ...meta, status:"found", detail:"Account exists" };
+    if (txt.includes('displayMessage')) return { ...meta, status:"not_found", detail:"No account found" };
+    if (r2.status === 429) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -2513,36 +2078,29 @@ async function check_eventbrite(email) {
   try {
     const url = "https://www.eventbrite.com/api/v3/users/lookup/";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = [];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -2551,36 +2109,29 @@ async function check_nike(email) {
   try {
     const url = "https://unite.nike.com/account/email/v1";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = [];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -2589,36 +2140,29 @@ async function check_samsung(email) {
   try {
     const url = "https://account.samsung.com/accounts/v1/Samsung_com_FR/signUpCheckEmailIDProc";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = [];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -2627,36 +2171,29 @@ async function check_codecademy(email) {
   try {
     const url = "https://www.codecademy.com/register/validate";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = ["is already taken"];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -2665,36 +2202,29 @@ async function check_codepen(email) {
   try {
     const url = "https://codepen.io/accounts/duplicate_check";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = ["That Email is already taken."];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -2703,36 +2233,29 @@ async function check_devrant(email) {
   try {
     const url = "https://devrant.com/api/users";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = [];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -2740,13 +2263,13 @@ async function check_github(email) {
   const meta = { name: "github", domain: "github.com", category: "software", method: "register" };
   try {
     const r = await fetchWithTimeout(`https://github.com/signup_check/email?value=${encodeURIComponent(email)}`, { headers:{'User-Agent':'Mozilla/5.0','Accept':'*/*','X-Requested-With':'XMLHttpRequest'} }, 8000);
-    const txt = await r.text().catch(()=>'');
+    const txt = await r.text().catch(()=> '');
     const low = txt.toLowerCase();
     if (low.includes('already taken') || low.includes('already_exists')) return { ...meta, status:"found", detail:"Account exists" };
     if (r.status===200 && low.includes('available')) return { ...meta, status:"not_found", detail:"No account found" };
     if (r.status===422) return { ...meta, status:"found", detail:"Account exists" };
     if (r.status===429) return { ...meta, status:"rate_limit", detail:"Rate limited" };
-    return { ...meta, status:"error", detail:"Inconclusive response" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
   } catch { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
@@ -2756,36 +2279,29 @@ async function check_replit(email) {
   try {
     const url = "https://replit.com/data/user/exists";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = [];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -2794,36 +2310,29 @@ async function check_teamtreehouse(email) {
   try {
     const url = "https://teamtreehouse.com/account/email_address";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = ["that email address is taken."];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -2832,36 +2341,29 @@ async function check_vrbo(email) {
   try {
     const url = "https://www.vrbo.com/auth/aam/v3/status";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = [];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -2893,36 +2395,29 @@ async function check_armurerieauxerre(email) {
   try {
     const url = "https://www.armurerie-auxerre.com/customer/Email/email/";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = [];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -2931,36 +2426,29 @@ async function check_deliveroo(email) {
   try {
     const url = "https://consumer-ow-api.deliveroo.com/orderapp/v1/check-email";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = [];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -2969,36 +2457,29 @@ async function check_dominosfr(email) {
   try {
     const url = "https://commande.dominos.fr/eStore/fr/Signup";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = [];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -3007,36 +2488,29 @@ async function check_ebay(email) {
   try {
     const url = "https://signin.ebay.com/signin/srv/identifer";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = [];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -3045,36 +2519,29 @@ async function check_envato(email) {
   try {
     const url = "https://account.envato.com/api/validate_email";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = ["Email is already in use"];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -3083,36 +2550,29 @@ async function check_garmin(email) {
   try {
     const url = "https://sso.garmin.com/sso/validateNewAccount";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = [];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -3121,36 +2581,29 @@ async function check_naturabuy(email) {
   try {
     const url = "https://www.naturabuy.fr/includes/ajax/register.php";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = [];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -3159,36 +2612,29 @@ async function check_vivino(email) {
   try {
     const url = "https://www.vivino.com/api/login";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = [];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -3197,36 +2643,29 @@ async function check_bitmoji(email) {
   try {
     const url = "https://accounts.snapchat.com";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = [];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -3235,36 +2674,29 @@ async function check_crevado(email) {
   try {
     const url = "https://crevado.com/";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = [];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -3273,13 +2705,12 @@ async function check_discord(email) {
   try {
     const r = await fetchWithTimeout('https://discord.com/api/v9/auth/register', {
       method:'POST', headers:{'Content-Type':'application/json','User-Agent':'Mozilla/5.0'},
-      body: JSON.stringify({email, username:'mono'+Math.random().toString(36).slice(2,10), password:'A'+Math.random().toString(36).slice(2)+'!1', consent:true, fingerprint:null, invite:null, date_of_birth:'1990-01-01', gift_code_sku_id:null, captcha_key:null})
+      body: JSON.stringify({email, username:'mono'+Math.random().toString(36).slice(2,10), password:'A'+Math.random().toString(36).slice(2)+'!1Aa', consent:true, fingerprint:null, invite:null, date_of_birth:'1990-01-01', gift_code_sku_id:null, captcha_key:null})
     }, 8000);
-    const txt = await r.text().catch(()=>'');
+    const txt = await r.text().catch(()=> '');
     const low = txt.toLowerCase();
     if (low.includes('email_already_registered') || low.includes('already registered')) return { ...meta, status:"found", detail:"Account exists" };
     if (r.status === 429 || low.includes('rate limit') || low.includes('captcha-required')) return { ...meta, status:"rate_limit", detail:"Rate limited / captcha" };
-    if (r.status === 400 && low.includes('email')) return { ...meta, status:"not_found", detail:"No account found" };
     return { ...meta, status:"not_found", detail:"No account found" };
   } catch { return { ...meta, status:"error", detail:"Request failed" }; }
 }
@@ -3290,36 +2721,29 @@ async function check_facebook(email) {
   try {
     const url = "https://www.facebook.com/api/v1/web/accounts/web_create_ajax/attempt/";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = [];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -3328,36 +2752,29 @@ async function check_fanpop(email) {
   try {
     const url = "https://www.fanpop.com/login/superlogin";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = ["already registered"];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -3366,54 +2783,46 @@ async function check_imgur(email) {
   try {
     const url = "https://imgur.com/signin/ajax_email_available";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = [];
+    const notSigs = ["Invalid email domain"];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
 async function check_instagram(email) {
   const meta = { name: "instagram", domain: "instagram.com", category: "social_media", method: "register" };
   try {
-    const csrf = 'missing';
     const r = await fetchWithTimeout('https://www.instagram.com/api/v1/web/accounts/web_create_ajax/attempt/', {
       method:'POST',
-      headers:{'User-Agent':'Mozilla/5.0','Content-Type':'application/x-www-form-urlencoded','X-CSRFToken':csrf,'X-IG-App-ID':'936619743392459','X-Requested-With':'XMLHttpRequest','Referer':'https://www.instagram.com/accounts/emailsignup/'},
+      headers:{'User-Agent':'Mozilla/5.0','Content-Type':'application/x-www-form-urlencoded','X-CSRFToken':'missing','X-IG-App-ID':'936619743392459','Referer':'https://www.instagram.com/accounts/emailsignup/'},
       body:`email=${encodeURIComponent(email)}&username=&first_name=&opt_into_one_tap=false`
     }, 8000);
-    const txt = await r.text().catch(()=>'');
+    const txt = await r.text().catch(()=> '');
     const low = txt.toLowerCase();
     if (low.includes('email_is_taken') || low.includes('another account is using')) return { ...meta, status:"found", detail:"Account exists" };
-    if (low.includes('email') && low.includes('available')) return { ...meta, status:"not_found", detail:"No account found" };
+    if (low.includes('email_is_available') || low.includes('"errors":{}')) return { ...meta, status:"not_found", detail:"No account found" };
     if (r.status===429) return { ...meta, status:"rate_limit", detail:"Rate limited" };
-    return { ...meta, status:"error", detail:"Inconclusive response" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
   } catch { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
@@ -3444,36 +2853,29 @@ async function check_odnoklassniki(email) {
   try {
     const url = "https://github.com/shllwrld/ok_checker/";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = [];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -3482,36 +2884,29 @@ async function check_parler(email) {
   try {
     const url = "https://api.parler.com/v2/login/new";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = [];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -3520,36 +2915,29 @@ async function check_patreon(email) {
   try {
     const url = "https://www.patreon.com/api/email/available";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = [];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -3558,11 +2946,11 @@ async function check_pinterest(email) {
   try {
     const params = new URLSearchParams({ source_url: "/", data: JSON.stringify({ options: { email }, context: "signup" }) });
     const r = await fetchWithTimeout(`https://www.pinterest.com/resource/EmailExistsResource/get/?${params.toString()}`, { headers:{'User-Agent':'Mozilla/5.0','Accept':'application/json'} }, 8000);
-    const txt = await r.text().catch(()=>'');
-    if (txt.includes('"email_exists": true') || txt.includes('"message":"Email has already been taken"')) return { ...meta, status:"found", detail:"Account exists" };
-    if (txt.includes('"email_exists": false')) return { ...meta, status:"not_found", detail:"No account found" };
+    const txt = await r.text().catch(()=> '');
+    if (txt.includes('"email_exists":true') || txt.includes('already been taken')) return { ...meta, status:"found", detail:"Account exists" };
+    if (txt.includes('"email_exists":false')) return { ...meta, status:"not_found", detail:"No account found" };
     if (r.status===429) return { ...meta, status:"rate_limit", detail:"Rate limited" };
-    return { ...meta, status:"error", detail:"Inconclusive response" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
   } catch { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
@@ -3572,36 +2960,29 @@ async function check_plurk(email) {
   try {
     const url = "https://www.plurk.com/Users/isEmailFound";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = [];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -3612,11 +2993,11 @@ async function check_snapchat(email) {
       method:'POST', headers:{'Content-Type':'application/json','User-Agent':'Mozilla/5.0'},
       body: JSON.stringify({email})
     }, 8000);
-    const txt = await r.text().catch(()=>'');
+    const txt = await r.text().catch(()=> '');
     if (r.status===200 && txt.toLowerCase().includes('account_type')) return { ...meta, status:"found", detail:"Account exists" };
     if (r.status===404) return { ...meta, status:"not_found", detail:"No account found" };
     if (r.status===429) return { ...meta, status:"rate_limit", detail:"Rate limited" };
-    return { ...meta, status:"error", detail:"Inconclusive response" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
   } catch { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
@@ -3626,36 +3007,29 @@ async function check_strava(email) {
   try {
     const url = "https://www.strava.com/register/free?cta=sign-up&element=button&source=website_show";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = [];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -3664,36 +3038,29 @@ async function check_taringa(email) {
   try {
     const url = "https://www.taringa.net/api/auth/availability/email";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = [];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -3702,36 +3069,29 @@ async function check_tellonym(email) {
   try {
     const url = "https://api.tellonym.me/accounts/check";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = ["EMAIL_ALREADY_IN_USE"];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -3742,12 +3102,14 @@ async function check_tumblr(email) {
       method:'POST', headers:{'Content-Type':'application/json','User-Agent':'Mozilla/5.0'},
       body: JSON.stringify({email})
     }, 8000);
-    const txt = await r.text().catch(()=>'');
+    const txt = await r.text().catch(()=> '');
     const low = txt.toLowerCase();
     if (low.includes('already in use') || low.includes('email is already')) return { ...meta, status:"found", detail:"Account exists" };
-    if (low.includes('"user_errors":[]') || (r.status===200 && !low.includes('error'))) return { ...meta, status:"not_found", detail:"No account found" };
+    if (r.status===200 && low.includes('user_errors')) {
+      if (low.includes('"user_errors":[]') || low.includes('"user_errors": []')) return { ...meta, status:"not_found", detail:"No account found" };
+    }
     if (r.status===429) return { ...meta, status:"rate_limit", detail:"Rate limited" };
-    return { ...meta, status:"error", detail:"Inconclusive response" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
   } catch { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
@@ -3756,12 +3118,12 @@ async function check_twitter(email) {
   const meta = { name: "twitter", domain: "twitter.com", category: "social_media", method: "register" };
   try {
     const r = await fetchWithTimeout(`https://api.twitter.com/i/users/email_available.json?email=${encodeURIComponent(email)}`, { headers:{'User-Agent':'Mozilla/5.0'} }, 8000);
-    const txt = await r.text().catch(()=>'');
+    const txt = await r.text().catch(()=> '');
     const low = txt.toLowerCase();
-    if (low.includes('"taken":true') || low.includes('"valid":false')) return { ...meta, status:"found", detail:"Account exists" };
+    if (low.includes('"taken":true')) return { ...meta, status:"found", detail:"Account exists" };
     if (low.includes('"taken":false')) return { ...meta, status:"not_found", detail:"No account found" };
     if (r.status===429) return { ...meta, status:"rate_limit", detail:"Rate limited" };
-    return { ...meta, status:"error", detail:"Inconclusive response" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
   } catch { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
@@ -3771,36 +3133,29 @@ async function check_vsco(email) {
   try {
     const url = "https://api.vsco.co/2.0/users/email?email={email}";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = [];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -3809,36 +3164,29 @@ async function check_wattpad(email) {
   try {
     const url = "https://www.wattpad.com";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = [];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -3847,57 +3195,45 @@ async function check_xing(email) {
   try {
     const url = "https://www.xing.com/welcome/api/signup/validate";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = [];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
 async function check_adobe(email) {
   const meta = { name: "adobe", domain: "adobe.com", category: "software", method: "password recovery" };
   try {
-    const headers = {'User-Agent':'Mozilla/5.0','Accept':'application/json, text/plain, */*','Accept-Language':'en-US,en;q=0.5','X-IMS-CLIENTID':'adobedotcom2','Content-Type':'application/json;charset=utf-8'};
+    const headers = {'User-Agent':'Mozilla/5.0','Accept':'application/json, text/plain, */*','X-IMS-CLIENTID':'adobedotcom2','Content-Type':'application/json;charset=utf-8'};
     const r = await fetchWithTimeout('https://auth.services.adobe.com/signin/v2/users/accounts', {method:'POST', headers, body: JSON.stringify({username:email})}, 8000);
-    if (r.status === 200) {
-      const data = await r.json().catch(()=>[]);
-      if (Array.isArray(data) && data.length>0) return { ...meta, status:"found", detail:"Account exists" };
-      return { ...meta, status:"not_found", detail:"No account found" };
-    }
+    if (r.status === 200) { const data = await r.json().catch(()=>[]); if (Array.isArray(data) && data.length>0) return { ...meta, status:"found", detail:"Account exists" }; return { ...meta, status:"not_found", detail:"No account found" }; }
     if (r.status === 404) return { ...meta, status:"not_found", detail:"No account found" };
     if (r.status === 429) return { ...meta, status:"rate_limit", detail:"Rate limited" };
-    // fallback old endpoint
     const r2 = await fetchWithTimeout('https://auth.services.adobe.com/signin/v1/authenticationstate', {method:'POST', headers, body: JSON.stringify({username:email, accountType:'individual'})}, 8000);
     const j = await r2.json().catch(()=>({}));
     if (j && !('errorCode' in j)) return { ...meta, status:"found", detail:"Account exists" };
     if (j && j.errorCode) return { ...meta, status:"not_found", detail:"No account found" };
-    return { ...meta, status:"error", detail:`HTTP ${r.status}` };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
   } catch { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
@@ -3908,7 +3244,7 @@ async function check_archive(email) {
     const r = await fetchWithTimeout("https://archive.org/account/signup", { method:"POST", headers:{"Content-Type":"application/x-www-form-urlencoded","User-Agent":"Mozilla/5.0"}, body:`input=${encodeURIComponent(email)}&checkval=true` }, 8000);
     if (r.status===200){ const d=await r.json().catch(()=>({})); if(d?.success===false) return {...meta,status:"found",detail:"Account exists"}; return {...meta,status:"not_found",detail:"No account found"}; }
     if (r.status===429) return {...meta,status:"rate_limit",detail:"Rate limited"};
-    return {...meta,status:"error",detail:`HTTP ${r.status}`};
+    return {...meta,status:"inconclusive",detail:`HTTP ${r.status}`};
   } catch { return {...meta,status:"error",detail:"Request failed"}; }
 }
 
@@ -3918,36 +3254,29 @@ async function check_docker(email) {
   try {
     const url = "https://hub.docker.com/v2/users/signup/";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = ["This email is already in use."];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -3957,7 +3286,7 @@ async function check_firefox(email) {
     const r = await fetchWithTimeout(`https://api.accounts.firefox.com/v1/account/status?email=${encodeURIComponent(email)}`, { headers:{'User-Agent':'Mozilla/5.0'} }, 8000);
     if (r.status===200) { const d=await r.json().catch(()=>({})); return { ...meta, status: d.exists ? "found":"not_found", detail: d.exists?"Account exists":"No account found" }; }
     if (r.status===429) return { ...meta, status:"rate_limit", detail:"Rate limited" };
-    return { ...meta, status:"error", detail:`HTTP ${r.status}` };
+    return { ...meta, status:"inconclusive", detail:`HTTP ${r.status}` };
   } catch { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
@@ -3967,36 +3296,29 @@ async function check_issuu(email) {
   try {
     const url = "https://issuu.com/call/signup/check-email/";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = [];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -4018,36 +3340,29 @@ async function check_office365(email) {
   try {
     const url = "https://outlook.office365.com/autodiscover/autodiscover.json/v1.0/{}?Protocol=Autodiscoverv1";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = [];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -4056,36 +3371,29 @@ async function check_bodybuilding(email) {
   try {
     const url = "https://www.bodybuilding.com";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = [];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -4094,36 +3402,29 @@ async function check_blablacar(email) {
   try {
     const url = "https://www.blablacar.fr/register";
     if (!url) return { ...meta, status: "inconclusive", detail: "Not implemented" };
-    const r = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
-      body: JSON.stringify({ email, username: email }),
-    }, 8000);
-    const txt = await r.text().catch(()=>"");
-    const low = txt.toLowerCase();
-    if (r.status === 429 || low.includes("rate limit") || low.includes("too many requests")) return { ...meta, status: "rate_limit", detail: "Rate limited" };
-    if (r.status === 404) return { ...meta, status: "not_found", detail: "No account found" };
-    // common positive signals
-    const existsSignals = ["already exists","already registered","email_taken","email already","already in use","account exists","user exists","already used","email is taken","registered"];
-    const notSignals = ["available","not found","no account","doesn't exist","does not exist","not registered","no user","free"];
-    const hasExists = existsSignals.some(s=>low.includes(s));
-    const hasNot = notSignals.some(s=>low.includes(s));
-    if (hasExists && !hasNot) return { ...meta, status: "found", detail: "Account exists" };
-    if (hasNot && !hasExists) return { ...meta, status: "not_found", detail: "No account found" };
-    // try to interpret json
-    try {
-      const j = JSON.parse(txt);
-      if (j && typeof j === 'object') {
-        const js = JSON.stringify(j).toLowerCase();
-        if (existsSignals.some(s=>js.includes(s))) return { ...meta, status: "found", detail: "Account exists" };
-        if (notSignals.some(s=>js.includes(s))) return { ...meta, status: "not_found", detail: "No account found" };
-        if (j.exists === true || j.taken === true || j.email_exists === true) return { ...meta, status: "found", detail: "Account exists" };
-        if (j.exists === false || j.taken === false || j.email_exists === false) return { ...meta, status: "not_found", detail: "No account found" };
-      }
-    } catch(_){
-    }
-    return { ...meta, status: "inconclusive", detail: "Could not verify" };
-  } catch (e) { return { ...meta, status: "error", detail: "Request failed" }; }
+    const existsSigs = [];
+    const notSigs = [];
+    const headers = { "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.5" };
+    // Try POST json
+    let r = await fetchWithTimeout(url, { method: "POST", headers: {...headers, "Content-Type":"application/json"}, body: JSON.stringify({ email, username: email }) }, 8000);
+    let txt = await r.text().catch(()=>"");
+    let low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests") || low.includes("rate limit")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    let hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    let hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    // Try GET with email param
+    const u2 = url + (url.includes("?") ? "&" : "?") + "email=" + encodeURIComponent(email);
+    r = await fetchWithTimeout(u2, { headers }, 8000);
+    txt = await r.text().catch(()=>""); low = txt.toLowerCase();
+    if (r.status === 429 || low.includes("too many requests")) return { ...meta, status:"rate_limit", detail:"Rate limited" };
+    hasExists = existsSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    hasNot = notSigs.some(s => txt.includes(s) || low.includes(s.toLowerCase()));
+    if (hasExists && !hasNot) return { ...meta, status:"found", detail:"Account exists" };
+    if (hasNot && !hasExists) return { ...meta, status:"not_found", detail:"No account found" };
+    return { ...meta, status:"inconclusive", detail:"Could not verify" };
+  } catch (e) { return { ...meta, status:"error", detail:"Request failed" }; }
 }
 
 
@@ -4267,7 +3568,6 @@ async function runModules(email) {
     }
   }
   await Promise.all(Array.from({length: Math.min(concurrency, MODULES.length)}, worker));
-  // stable sort by name
   results.sort((a,b)=>String(a.name).localeCompare(String(b.name)));
   return results;
 }
@@ -4307,14 +3607,8 @@ async function handler(req, res) {
   const results = await runModules(email);
   const found = results.filter(r => r.status === "found").length;
 
-  return json(res, 200, {
-    email,
-    checked: results.length,
-    found,
-    durationMs: Date.now() - started,
-    results,
-  });
-};
+  return json(res, 200, { email, checked: results.length, found, durationMs: Date.now() - started, results });
+}
 
 module.exports = handler;
 module.exports.config = { maxDuration: 60 };
