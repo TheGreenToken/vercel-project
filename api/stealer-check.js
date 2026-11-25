@@ -1,0 +1,241 @@
+"use strict";
+
+// stealerlogs.com exposure search (free web search, no API token).
+// Scrapes the server-rendered result table for an email identifier and
+// returns normalized hits. Session-gated, rate-limited, defensive parser.
+//
+// Notes on scope: this is a read-only exposure lookup over publicly
+// indexed stealer-log hits (same category as HIBP / Intel X). The free
+// web search only exposes partial logins/passwords; we pass those through
+// as-is and never attempt to bypass any paywall, auth, or anti-scraping.
+
+const kv     = require("./kv");
+const { kvRateLimit, getCorsHeaders } = require("./middleware");
+const { verifySessionToken, isTokenBlacklisted } = require("./session");
+
+const EMAIL_RE = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/;
+const SEARCH_BASE = "https://stealerlogs.com/search";
+
+function json(res, status, body) {
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
+  res.setHeader("Cache-Control", "no-store");
+  res.status(status).send(JSON.stringify(body));
+}
+function parseCookies(req) {
+  const raw = String(req.headers["cookie"] || "");
+  const out = {};
+  raw.split(/;\s*/).forEach(part => { const idx = part.indexOf("="); if (idx > 0) out[part.slice(0, idx).trim()] = decodeURIComponent(part.slice(idx + 1).trim()); });
+  return out;
+}
+function sanitizeEmail(e) { const email = String(e || "").trim().toLowerCase().slice(0, 254); return EMAIL_RE.test(email) ? email : ""; }
+
+async function fetchWithTimeout(url, opts = {}, ms = 12000) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), ms);
+  try {
+    return await fetch(url, {
+      ...opts,
+      signal: ctrl.signal,
+      redirect: opts.redirect || "follow",
+      headers: {
+        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        ...(opts.headers || {}),
+      },
+    });
+  } finally { clearTimeout(t); }
+}
+
+// ---- minimal, defensive HTML table parser (no external deps) ----
+function stripTags(s) {
+  return String(s || "")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&#x27;/g, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+function decodeEntities(s) {
+  return String(s || "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&#x27;/g, "'");
+}
+
+function parseTables(html) {
+  if (!html) return [];
+  // isolate <table>...</table> blocks
+  const tables = [];
+  const re = /<table\b[^>]*>([\s\S]*?)<\/table>/gi;
+  let m;
+  while ((m = re.exec(html)) !== null) tables.push(m[1]);
+  return tables;
+}
+
+function parseRows(tableHtml) {
+  const rows = [];
+  const re = /<tr\b[^>]*>([\s\S]*?)<\/tr>/gi;
+  let m;
+  while ((m = re.exec(tableHtml)) !== null) {
+    const cells = [];
+    const cre = /<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/gi;
+    let c;
+    while ((c = cre.exec(m[1])) !== null) cells.push(stripTags(decodeEntities(c[1])));
+    if (cells.length) rows.push(cells);
+  }
+  return rows;
+}
+
+function findResultTable(html) {
+  const tables = parseTables(html);
+  // pick the table that contains a header cell mentioning "Origin" or "Login"
+  for (const t of tables) {
+    const head = /Origin|Login|Password/i.test(t);
+    if (head) return t;
+  }
+  // fallback: largest table by row count
+  let best = "";
+  for (const t of tables) { if (t.length > best.length) best = t; }
+  return best;
+}
+
+function parseSearchResults(html) {
+  const out = { total: 0, page: 1, pageSize: 0, totalPages: 0, hits: [] };
+  if (!html) return out;
+
+  // total count line, e.g. "10,000 records · 1–25 · page 1 of 400"
+  const totalM = /([\d,]+)\s*records?/i.exec(html);
+  if (totalM) out.total = parseInt(totalM[1].replace(/,/g, ""), 10) || 0;
+  const pageM = /page\s+(\d+)\s+of\s+(\d+)/i.exec(html);
+  if (pageM) { out.page = parseInt(pageM[1], 10) || 1; out.totalPages = parseInt(pageM[2], 10) || 0; }
+  const rangeM = /(\d+)\s*[–-]\s*(\d+)/.exec(html);
+  if (rangeM) out.pageSize = parseInt(rangeM[2], 10) || 0;
+
+  const table = findResultTable(html);
+  if (!table) return out;
+
+  const rows = parseRows(table);
+  if (!rows.length) return out;
+
+  // Determine header + column order if a header row is present.
+  let header = null;
+  let bodyStart = 0;
+  const first = rows[0].map(c => c.toLowerCase());
+  if (/origin|login|password|posted|source|files/.test(first.join(" "))) {
+    header = first;
+    bodyStart = 1;
+  }
+  const idx = (name) => {
+    if (!header) return -1;
+    return header.indexOf(name);
+  };
+  const iOrigin = idx("origin");
+  const iLogin  = idx("login");
+  const iPass   = idx("password");
+  const iPosted = idx("posted");
+  const iSource = idx("source");
+  const iFiles  = idx("files");
+  // If no header, assume fixed order: origin, login, password, posted, source, files
+  const coord = (row, i) => (i >= 0 ? row[i] : (i >= 0 ? undefined : undefined));
+
+  for (let r = bodyStart; r < rows.length; r++) {
+    const row = rows[r];
+    if (row.length < 2) continue;
+    const origin  = iOrigin >= 0 ? (row[iOrigin] || "") : (row[0] || "");
+    const login   = iLogin  >= 0 ? (row[iLogin]  || "") : (row[1] || "");
+    const password = iPass  >= 0 ? (row[iPass]  || "") : (row[2] || "");
+    const posted  = iPosted >= 0 ? (row[iPosted] || "") : (row[3] || "");
+    const source  = iSource >= 0 ? (row[iSource] || "") : (row[4] || "");
+    const files   = iFiles  >= 0 ? (row[iFiles]  || "") : (row[5] || "");
+    const hasData = origin || login || password;
+    if (!hasData) continue;
+    out.hits.push({
+      origin: String(origin).slice(0, 200),
+      login: String(login).slice(0, 200),
+      password: String(password).slice(0, 120),
+      posted: String(posted).slice(0, 120),
+      source: String(source).slice(0, 120),
+      files: String(files).slice(0, 40),
+    });
+  }
+
+  if (!out.pageSize && out.hits.length) out.pageSize = out.hits.length;
+  return out;
+}
+
+async function searchEmail(email) {
+  const url = `${SEARCH_BASE}?q=${encodeURIComponent(email)}&type=email`;
+  const r = await fetchWithTimeout(url, {}, 15000);
+  const html = await r.text().catch(() => "");
+  if (r.status === 429) return { ok: false, status: "rate_limit", detail: "Source rate limited the request" };
+  if (r.status !== 200) return { ok: false, status: "error", detail: `Source responded HTTP ${r.status}` };
+  const parsed = parseSearchResults(html);
+  const noResults = /no more results found/i.test(html);
+  return { ok: true, status: parsed.hits.length ? "found" : (noResults ? "not_found" : "inconclusive"), detail: noResults ? "No hits in the index" : "", parsed };
+}
+
+async function handler(req, res) {
+  Object.entries(getCorsHeaders(req)).forEach(([k, v]) => res.setHeader(k, v));
+  res.setHeader("Cache-Control", "no-store");
+  if (req.method === "OPTIONS") return res.status(204).end();
+  if (req.method !== "POST") return json(res, 405, { error: "Method not allowed" });
+
+  const cookies = parseCookies(req);
+  const rawToken = cookies["mono_session"] || String(req.headers["x-session-token"] || "").trim();
+  const session = verifySessionToken(rawToken);
+  if (!session.ok) return json(res, 401, { error: session.error || "Login required" });
+  if (await isTokenBlacklisted(rawToken)) return json(res, 401, { error: "Session revoked — please log in again" });
+
+  let userBlocked = false;
+  for (let i = 1; i <= 50; i++) { const id = String(process.env[`BLACKLISTED_USER${i}`] || "").trim(); if (id === session.userId) { userBlocked = true; break; } }
+  if (!userBlocked) { try { const bl = await kv.get(`mono:kv_blacklist:${session.userId}`); if (bl) userBlocked = true; } catch (_) {} }
+  if (userBlocked) return json(res, 403, { error: "Your account is not allowed to use this service." });
+
+  let body;
+  try {
+    const chunks = []; for await (const chunk of req) chunks.push(chunk);
+    const raw = Buffer.concat(chunks).toString();
+    if (raw.length > 4096) return json(res, 413, { error: "Request body too large" });
+    body = JSON.parse(raw || "{}");
+  } catch (_) { return json(res, 400, { error: "Invalid JSON" }); }
+
+  const email = sanitizeEmail(body.email);
+  if (!email) return json(res, 400, { error: "Invalid email address" });
+
+  const limited = await kvRateLimit(`rl:stealercheck:${session.userId}`, 6, 60);
+  if (limited) return json(res, 429, { error: "Rate limit reached. Wait a moment." });
+
+  const started = Date.now();
+  const result = await searchEmail(email).catch(() => ({ ok: false, status: "error", detail: "Network request failed" }));
+  const durationMs = Date.now() - started;
+
+  if (!result.ok) {
+    return json(res, 502, { email, status: result.status, detail: result.detail, hits: [], total: 0, durationMs });
+  }
+
+  const hits = result.parsed.hits;
+  return json(res, 200, {
+    email,
+    status: result.status,
+    detail: result.detail,
+    total: result.parsed.total,
+    page: result.parsed.page,
+    totalPages: result.parsed.totalPages,
+    hitCount: hits.length,
+    hits,
+    durationMs,
+  });
+}
+
+module.exports = handler;
+module.exports.config = { maxDuration: 30 };

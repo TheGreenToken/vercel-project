@@ -5,6 +5,9 @@
     },
     "api/ndvdnks.js": {
       "maxDuration": 15
+    },
+    "api/stealer-check.js": {
+      "maxDuration": 30
     }
   },
   "rewrites": [

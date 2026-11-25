@@ -170,6 +170,17 @@ input::placeholder{color:var(--text-faint)}
 .email-detail{font-family:'IBM Plex Mono',monospace;font-size:.68rem;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .email-cat{text-align:right;font-family:'IBM Plex Mono',monospace;font-size:.62rem;color:var(--text-faint);text-transform:uppercase;letter-spacing:.08em}
 @media (max-width:640px){.email-row{grid-template-columns:1fr 110px;min-width:unset}.email-row>*:nth-child(3),.email-row>*:nth-child(4){display:none}}
+
+/* exposure rows */
+.exp-row{display:grid;grid-template-columns:minmax(140px,1fr) minmax(120px,1fr) minmax(120px,1fr) 120px 100px;padding:16px 20px;border-bottom:1px solid var(--border-soft);align-items:center;gap:12px;transition:background .25s,transform .25s var(--ease-out);animation:rowSlide .35s var(--ease-out) both;min-width:600px}
+.exp-row:last-child{border-bottom:none}
+.exp-row:hover{background:rgba(255,255,255,.035);transform:translateX(4px);box-shadow:inset 2px 0 0 rgba(255,255,255,.6)}
+.exp-origin{font-family:'IBM Plex Mono',monospace;font-size:.72rem;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:10px}
+.exp-cell{font-family:'IBM Plex Mono',monospace;font-size:.68rem;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.exp-cell.dim{color:var(--text-faint)}
+.exp-badge{font-family:'IBM Plex Mono',monospace;font-size:.56rem;letter-spacing:.08em;text-transform:uppercase;color:var(--text-faint);border:1px solid var(--border);padding:2px 6px;width:fit-content}
+.exp-badge.hit{color:#fff;border-color:#555;background:rgba(255,255,255,.06)}
+@media (max-width:640px){.exp-row{grid-template-columns:1fr 110px;min-width:unset}.exp-row>*:nth-child(2),.exp-row>*:nth-child(3),.exp-row>*:nth-child(4){display:none}}
 /* actions */
 .actions{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-top:24px}
 .btn{font-family:'IBM Plex Mono',monospace;font-size:.66rem;letter-spacing:.08em;padding:14px 14px;border:1px solid var(--border-strong);background:rgba(255,255,255,.01);color:var(--text-muted);cursor:pointer;text-transform:uppercase;transition:all .25s var(--ease-out);text-align:center;min-height:var(--touch-min);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -244,6 +255,7 @@ footer.footer{position:fixed;bottom:0;left:0;right:0;height:48px;display:flex;al
   <div class="tool-nav" id="toolNav">
     <button class="tool-tab active" id="toolTabGithub" type="button" data-tool="github">GitHub Scanner</button>
     <button class="tool-tab" id="toolTabEmail" type="button" data-tool="email">Email Footprint</button>
+    <button class="tool-tab" id="toolTabExposure" type="button" data-tool="exposure">Exposure Search</button>
   </div>
 
   <div class="tool-panel active" id="toolGithub">
@@ -442,9 +454,97 @@ footer.footer{position:fixed;bottom:0;left:0;right:0;height:48px;display:flex;al
     </div>
   </div>
 
+  <div class="tool-panel" id="toolExposure">
+    <div class="panel input-section">
+      <div class="divider"><div class="divider-label">Exposure Search</div></div>
+      <div class="input-row-top">
+        <div class="field-label">Email Address</div>
+        <div class="depth-bar">
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:.62rem;color:var(--text-faint);letter-spacing:.08em;text-transform:uppercase;">Stealer-log exposure lookup</span>
+        </div>
+      </div>
+      <div class="input-row">
+        <div class="input-at">@</div>
+        <input type="text" id="exposureInput" placeholder="target@example.com"
+               autocomplete="off" spellcheck="false" autocapitalize="none"
+               maxlength="254" />
+        <button class="btn-scan" id="exposureScanBtn" type="button"><span>Search</span></button>
+      </div>
+      <div class="hint">// checks publicly indexed stealer-log hits · partial credentials only · defensive OSINT</div>
+
+      <div class="progress-block" id="exposureProgressBlock">
+        <div class="progress-head">
+          <div class="progress-status" id="exposureStatusText">Initializing...</div>
+          <div class="progress-pct" id="exposurePctText">0%</div>
+        </div>
+        <div class="progress-bar"><div class="progress-fill" id="exposureProgressFill"></div></div>
+        <div class="progress-sub"><div class="progress-sub-fill" id="exposureSubFill"></div></div>
+        <div class="log-block" id="exposureLogBlock" aria-live="polite"></div>
+      </div>
+
+      <div class="error-block" id="exposureErrorBlock" role="alert">
+        <strong>// Error</strong>
+        <span id="exposureErrorMsg"></span>
+        <div id="exposureErrorHint" style="margin-top:8px;font-size:0.72rem;color:var(--text-muted);font-family:'IBM Plex Mono',monospace;"></div>
+      </div>
+    </div>
+
+    <div class="results-block" id="exposureResultsBlock">
+      <div class="profile-strip">
+        <div class="avatar-wrap">
+          <div class="profile-avatar" id="exposureAvatar" style="display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Mono',monospace;font-size:1.4rem;color:var(--text-muted);background:var(--bg-subtle);">@</div>
+        </div>
+        <div class="profile-info">
+          <div class="profile-handle"><span class="at"></span><span id="exposureTarget"></span></div>
+          <div class="profile-meta" id="exposureMeta"></div>
+        </div>
+        <div class="profile-stats">
+          <div class="stat-item">
+            <div class="stat-num red" id="exposureFoundCount">&#8212;</div>
+            <div class="stat-label">Hits</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-num" id="exposureTotalCount">&#8212;</div>
+            <div class="stat-label">In Index</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="divider" style="margin-top:0;margin-bottom:16px"><div class="divider-label">Log Hits</div></div>
+      <div class="results-head">
+        <div class="results-title">Exposure Report</div>
+        <div class="results-count" id="exposureResultsCount"></div>
+      </div>
+      <div class="filter-bar">
+        <button class="filter-btn active" id="exposureFilterAll" type="button">All</button>
+        <button class="filter-btn" id="exposureFilterOrigin" type="button">Origin</button>
+        <button class="filter-btn" id="exposureFilterSource" type="button">Source</button>
+      </div>
+      <div class="table-wrap">
+        <div class="table-head" style="grid-template-columns:minmax(140px,1fr) minmax(120px,1fr) minmax(120px,1fr) 120px 100px;min-width:600px;">
+          <div>Origin</div><div>Login</div><div>Password</div><div>Posted</div><div>Source</div>
+        </div>
+        <div id="exposureTableBody"></div>
+      </div>
+      <div class="actions">
+        <button class="btn red-btn" id="exposureBtnCopy" type="button">&#x2398; <span id="exposureLblCopy">Copy Hits</span></button>
+        <button class="btn" id="exposureBtnTxt" type="button">&#x2913; <span id="exposureLblTxt">Download TXT</span></button>
+        <button class="btn" id="exposureBtnJson" type="button">&#x2913; <span id="exposureLblJson">Export JSON</span></button>
+        <button class="btn" id="exposureBtnCsv" type="button">&#x2913; <span id="exposureLblCsv">Export CSV</span></button>
+        <button class="btn" id="exposureBtnNew" type="button">&#x21BA; New Search</button>
+      </div>
+    </div>
+
+    <div class="history-section" id="exposureHistorySection" style="display:none;">
+      <div class="divider" style="margin-bottom:16px;"><div class="divider-label">Exposure Search History</div></div>
+      <div class="history-list" id="exposureHistoryList"></div>
+    </div>
+  </div>
+
 </div>
 
 <script src="/app.js" defer></script>
 <script src="/email-tool.js" defer></script>
+<script src="/exposure-tool.js" defer></script>
 </body>
 </html>
