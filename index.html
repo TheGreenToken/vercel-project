@@ -663,6 +663,22 @@ input::placeholder { color: var(--text-faint); }
   vertical-align: middle;
 }
 
+.tag-conf {
+  display: inline-block;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.54rem;
+  letter-spacing: 0.08em;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  margin-left: 8px;
+  vertical-align: middle;
+  text-transform: uppercase;
+}
+.tag-conf.high { color: var(--text); border-color: var(--border-strong); }
+.tag-conf.medium { color: var(--text-muted); border-color: var(--border); }
+.tag-conf.low { color: var(--text-faint); border-color: var(--border-soft); }
+
 /* ---- ACTIONS ---- */
 .actions {
   display: grid;
@@ -903,6 +919,7 @@ footer.footer {
   <div class="error-block" id="errorBlock" role="alert">
     <strong>// Error</strong>
     <span id="errorMsg"></span>
+    <div id="errorHint" style="margin-top:8px;font-size:0.72rem;color:var(--text-muted);font-family:'IBM Plex Mono',monospace;"></div>
   </div>
 
   <div class="results-block" id="resultsBlock">
@@ -957,9 +974,10 @@ footer.footer {
     </div>
 
     <div class="actions">
-      <button class="btn red-btn" id="btnCopyEmails" type="button">&#x2398; <span id="lblTxt">Emails (.txt)</span></button>
-      <button class="btn"         id="btnCopyJSON"   type="button">&#x2398; <span id="lblJson">Export JSON</span></button>
-      <button class="btn"         id="btnCopyCSV"    type="button">&#x2398; <span id="lblCsv">Export CSV</span></button>
+      <button class="btn red-btn" id="btnCopyEmails" type="button">&#x2398; <span id="lblCopy">Copy Emails</span></button>
+      <button class="btn"         id="btnDownloadTxt" type="button">&#x2913; <span id="lblTxt">Download TXT</span></button>
+      <button class="btn"         id="btnCopyJSON"   type="button">&#x2913; <span id="lblJson">Export JSON</span></button>
+      <button class="btn"         id="btnCopyCSV"    type="button">&#x2913; <span id="lblCsv">Export CSV</span></button>
       <button class="btn"         id="btnNewScan"    type="button">&#x21BA; New Scan</button>
     </div>
 

@@ -247,7 +247,17 @@
   }
 
   function showScanError(msg) {
-    setText('errorMsg', msg);
+    const raw = String(msg || 'Unknown error');
+    let hint = '';
+    if (/rate limit/i.test(raw)) hint = 'GitHub API limit reached. Try again later or use a different token.';
+    else if (/authentication failed|GITHUB_TOKEN/i.test(raw)) hint = 'Server GitHub token is missing or invalid. Ask the admin to update GITHUB_TOKEN.';
+    else if (/not found/i.test(raw)) hint = 'Check the username spelling and make sure the profile is public.';
+    else if (/timed out|timeout/i.test(raw)) hint = 'GitHub took too long to respond. Try again, or use Fast scan.';
+    else if (/Login required|sign in/i.test(raw)) hint = 'Sign in with Discord to run scans.';
+    else if (/network|connection|failed to fetch/i.test(raw)) hint = 'Check your connection and try again.';
+    setText('errorMsg', raw);
+    const hintEl = document.getElementById('errorHint');
+    if (hintEl) { hintEl.textContent = hint; hintEl.style.display = hint ? '' : 'none'; }
     show('errorBlock');
     hide('progressBlock');
     const scanBtn = document.getElementById('scanBtn');
@@ -312,10 +322,12 @@
   }
   function updateDownloadLabels() {
     const count = getFilteredEmails().length;
-    const lbl  = document.getElementById('lblTxt');
-    const lbl3 = document.getElementById('lblCsv');
-    if (lbl)  lbl.textContent  = count + ' Email' + (count !== 1 ? 's' : '') + ' (.txt)';
-    if (lbl3) lbl3.textContent = count + ' Email' + (count !== 1 ? 's' : '') + ' (.csv)';
+    const lblCopy = document.getElementById('lblCopy');
+    const lblTxt  = document.getElementById('lblTxt');
+    const lblCsv  = document.getElementById('lblCsv');
+    if (lblCopy) lblCopy.textContent = 'Copy ' + count + ' Email' + (count !== 1 ? 's' : '');
+    if (lblTxt)  lblTxt.textContent  = 'Download TXT (' + count + ')';
+    if (lblCsv)  lblCsv.textContent  = 'Export CSV (' + count + ')';
   }
 
   function setFilter(f) {
@@ -370,6 +382,17 @@
         tag.className = 'tag-nr';
         tag.textContent = 'SYSTEM';
         emailDiv.appendChild(tag);
+      } else {
+        const cnt = Number(item.count) || 0;
+        const repoCount = Array.isArray(item.repos) ? item.repos.length : 0;
+        let conf = 'low', confLabel = 'LOW';
+        if (cnt >= 5 || (cnt >= 3 && repoCount >= 2)) { conf = 'high'; confLabel = 'HIGH'; }
+        else if (cnt >= 2) { conf = 'medium'; confLabel = 'MED'; }
+        const cTag = document.createElement('span');
+        cTag.className = 'tag-conf ' + conf;
+        cTag.textContent = confLabel;
+        cTag.title = cnt + ' hit' + (cnt !== 1 ? 's' : '') + ' across ' + repoCount + ' repo' + (repoCount !== 1 ? 's' : '');
+        emailDiv.appendChild(cTag);
       }
 
       const nameDiv = document.createElement('div');
@@ -380,11 +403,12 @@
       reposDiv.className = 'row-repos';
       const repoList = Array.isArray(item.repos) ? item.repos : [];
       reposDiv.textContent = repoList.map(r => sanitize(r, 100)).join(', ');
+      if (repoList.length > 0) reposDiv.title = repoList.map(r => sanitize(r, 100)).join(', ');
 
       const countDiv = document.createElement('div');
-      const cnt = Number(item.count) || 0;
-      countDiv.className = 'row-count' + (cnt >= 10 ? ' hot' : '');
-      countDiv.textContent = String(cnt);
+      const cnt2 = Number(item.count) || 0;
+      countDiv.className = 'row-count' + (cnt2 >= 10 ? ' hot' : '');
+      countDiv.textContent = String(cnt2);
 
       row.appendChild(emailDiv);
       row.appendChild(nameDiv);
@@ -508,7 +532,11 @@
     const realCount   = emails.filter(e => !e.noreply).length;
     const systemCount = emails.filter(e =>  e.noreply).length;
     const rcEl = document.getElementById('resultsCount');
-    if (rcEl) rcEl.textContent = realCount + ' real · ' + systemCount + ' system';
+    if (rcEl) {
+      let txt = realCount + ' real · ' + systemCount + ' system';
+      if (data.fromCache) txt += ' · cached';
+      rcEl.textContent = txt;
+    }
 
     const limitWarn = document.getElementById('limitWarning');
     if (limitWarn) limitWarn.style.display = data.limitReached ? '' : 'none';
@@ -582,11 +610,29 @@
     });
   }
 
+  async function copyEmails() {
+    if (!scanResult) return;
+    const lines = getFilteredEmails().map(e => sanitize(e.email, 254)).join('\n');
+    if (!lines) { showToast('No emails to copy'); return; }
+    try {
+      await navigator.clipboard.writeText(lines);
+      flashBtn('btnCopyEmails', '\u2714 Copied');
+      showToast('Copied ' + getFilteredEmails().length + ' email(s) to clipboard');
+    } catch (_) {
+      const ta = document.createElement('textarea');
+      ta.value = lines; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); flashBtn('btnCopyEmails', '\u2714 Copied'); showToast('Copied to clipboard'); }
+      catch (e) { showToast('Copy failed'); }
+      document.body.removeChild(ta);
+    }
+  }
+
   function downloadTxt() {
     if (!scanResult) return;
     const lines = getFilteredEmails().map(e => sanitize(e.email, 254)).join('\n');
     downloadFile(lines, 'mono_emails_' + scanTargetSlug() + '_' + timestamp() + '.txt', 'text/plain');
-    flashBtn('btnCopyEmails', '\u2714 Downloaded');
+    flashBtn('btnDownloadTxt', '\u2714 Downloaded');
   }
 
   function downloadJson() {
@@ -656,10 +702,11 @@
     document.getElementById('thAddress')?.addEventListener('click', () => setSort('address'));
     document.getElementById('thHits')?.addEventListener('click',    () => setSort('count'));
 
-    document.getElementById('btnCopyEmails')?.addEventListener('click', downloadTxt);
-    document.getElementById('btnCopyJSON')?.addEventListener('click',   downloadJson);
-    document.getElementById('btnCopyCSV')?.addEventListener('click',    downloadCsv);
-    document.getElementById('btnNewScan')?.addEventListener('click',    resetScan);
+    document.getElementById('btnCopyEmails')?.addEventListener('click',  copyEmails);
+    document.getElementById('btnDownloadTxt')?.addEventListener('click', downloadTxt);
+    document.getElementById('btnCopyJSON')?.addEventListener('click',    downloadJson);
+    document.getElementById('btnCopyCSV')?.addEventListener('click',     downloadCsv);
+    document.getElementById('btnNewScan')?.addEventListener('click',     resetScan);
   })();
 
 })();
