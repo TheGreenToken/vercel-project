@@ -240,6 +240,8 @@ footer.footer{position:fixed;bottom:0;left:0;right:0;height:48px;display:flex;al
 @keyframes pinPulse{0%{transform:translate(-50%,-50%) scale(1);opacity:.55}100%{transform:translate(-50%,-50%) scale(4.5);opacity:0}}
 .pin-label{position:absolute;left:50%;top:-28px;transform:translateX(-50%);white-space:nowrap;font-family:'IBM Plex Mono',monospace;font-size:.62rem;letter-spacing:.05em;color:#fff;background:rgba(8,11,14,.88);border:1px solid var(--border-strong);padding:4px 9px;border-radius:3px;backdrop-filter:blur(2px)}
 .pin-label::after{content:'';position:absolute;left:50%;bottom:-4px;transform:translateX(-50%) rotate(45deg);width:8px;height:8px;background:rgba(8,11,14,.88);border-right:1px solid var(--border-strong);border-bottom:1px solid var(--border-strong)}
+.cdn-note{font-family:'IBM Plex Mono',monospace;font-size:.64rem;letter-spacing:.03em;color:var(--text-muted);border:1px solid var(--border);border-left:2px solid #ff9f43;background:rgba(255,159,67,.05);padding:10px 12px;margin-bottom:16px;line-height:1.5}
+.cdn-note b{color:#ff9f43;font-weight:600;letter-spacing:.08em;text-transform:uppercase}
 @media (prefers-reduced-motion:reduce){.pin-pulse{animation:none;opacity:.2}}
 </style>
 </head>
@@ -635,6 +637,7 @@ footer.footer{position:fixed;bottom:0;left:0;right:0;height:48px;display:flex;al
         <div class="results-title">Lookup Report</div>
         <div class="results-count" id="ipResultsCount"></div>
       </div>
+      <div class="cdn-note" id="ipCdnNote" style="display:none;"></div>
       <div class="table-wrap">
         <div class="table-head" style="grid-template-columns:160px 1fr;min-width:420px;">
           <div>Field</div><div>Value</div>
