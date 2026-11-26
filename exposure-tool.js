@@ -32,6 +32,27 @@
   let currentFilter = 'all';
   let currentEmail = '';
 
+  // ---- additional exposure sources ----
+  const srcStealer = $('expSrcStealer');
+  const srcComb = $('expSrcComb');
+  const srcXon = $('expSrcXon');
+  const hashInput = $('exposureHashInput');
+  const hashBtn = $('exposureHashBtn');
+  const hashResult = $('exposureHashResult');
+
+  function syncSourceBar() {
+    [srcStealer, srcComb, srcXon].forEach(cb => { if (!cb) return; const lbl = cb.closest('.source-check'); if (lbl) lbl.classList.toggle('on', cb.checked); });
+  }
+  function selectedSources() {
+    const s = [];
+    if (srcStealer && srcStealer.checked) s.push('stealerlogs');
+    if (srcComb && srcComb.checked) s.push('comb');
+    if (srcXon && srcXon.checked) s.push('xposedornot');
+    return s;
+  }
+  [srcStealer, srcComb, srcXon].forEach(cb => { if (cb) cb.addEventListener('change', syncSourceBar); });
+  syncSourceBar();
+
   function showError(msg, hint) {
     errorMsg.textContent = san(msg, 200);
     errorHint.textContent = hint ? san(hint, 200) : '';
@@ -140,69 +161,176 @@
     const email = validateEmail(input.value);
     if (!email) { showError('Enter a valid email address.', 'Example: name@example.com'); return; }
     currentEmail = email;
+    const sources = selectedSources();
+    if (!sources.length) { showError('Select at least one source.', 'Toggle a source above to search.'); return; }
     scanBtn.disabled = true;
     progressBlock.classList.add('show');
     resultsBlock.classList.remove('show');
     logBlock.innerHTML = '';
     setProgress(8, 'Checking session...');
     log(`Target: ${email}`, 'ok');
-    try {
-      setProgress(30, 'Querying exposure index...');
-      log('Requesting exposure search results...', 'ok');
-      let fake = 30;
-      const timer = setInterval(() => { fake = Math.min(80, fake + 2); setProgress(fake, 'Looking up hits...'); }, 700);
-      let res, text;
+    log(`Sources: ${sources.join(', ')}`, 'ok');
+
+    const merged = [];
+    const errors = [];
+    const usedSources = [];
+    let totalInIndex = 0;
+    let stealerTotal = 0;
+
+    // --- StealerLogs (existing endpoint) ---
+    if (sources.includes('stealerlogs')) {
+      usedSources.push('StealerLogs');
+      setProgress(24, 'Querying stealer-log index...');
+      log('Requesting stealer-log hits...', 'ok');
       try {
-        res = await fetch('/api/stealer-check', {
+        const res = await fetch('/api/stealer-check', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email }),
         });
-        text = await res.text();
-      } finally { clearInterval(timer); }
-      setProgress(85, 'Processing results...');
-      let data;
-      try { data = JSON.parse(text); } catch { throw new Error(text.slice(0, 160) || 'Invalid server response'); }
-      if (!res.ok || data.error) {
-        const msg = data.error || `HTTP ${res.status}`;
-        if (res.status === 401) { showError(msg, 'Please login with Discord first.'); }
-        else if (res.status === 429) { showError(msg, 'Please wait a moment and try again.'); }
-        else showError(msg, 'Try again in a moment.');
-        setProgress(100, 'Failed');
-        return;
+        const text = await res.text();
+        let data;
+        try { data = JSON.parse(text); } catch { throw new Error(text.slice(0, 160) || 'Invalid server response'); }
+        if (res.ok && !data.error) {
+          const hits = Array.isArray(data.hits) ? data.hits : [];
+          hits.forEach(h => merged.push({ origin: h.origin, login: h.login, password: h.password, posted: h.posted, source: h.source }));
+          stealerTotal = Number(data.total) || 0;
+          totalInIndex += stealerTotal;
+          log(`StealerLogs: ${hits.length} hit(s)`, hits.length ? 'hit' : 'ok');
+        } else {
+          const msg = data.error || `HTTP ${res.status}`;
+          errors.push(`StealerLogs: ${msg}`);
+          log(`StealerLogs: ${msg}`, 'err');
+        }
+      } catch (e) {
+        errors.push(`StealerLogs: ${e.message || 'failed'}`);
+        log(`StealerLogs failed: ${e.message || 'failed'}`, 'err');
       }
-      currentHits = Array.isArray(data.hits) ? data.hits : [];
-      currentFilter = 'all';
-      setFilter('all');
-      target.textContent = san(email, 254);
-      foundCount.textContent = String(data.hitCount ?? currentHits.length);
-      const totalVal = Number(data.total) > 0 ? data.total : (data.hitCount ?? currentHits.length);
-      totalCount.textContent = String(totalVal);
-      const sources = [...new Set(currentHits.map(h => h.source).filter(Boolean))].slice(0, 4);
-      if (data.status === 'not_found' || currentHits.length === 0) {
-        meta.textContent = 'No publicly indexed stealer-log hits found for this address.';
-      } else {
-        meta.textContent = `${currentHits.length} hit${currentHits.length>1?'s':''} found${sources.length ? ' · sources: ' + sources.join(', ') : ''}`;
-      }
-      setProgress(100, 'Complete');
-      log(`Done: ${currentHits.length} hit(s) in ${data.durationMs}ms`, currentHits.length ? 'hit' : 'ok');
-      resultsBlock.classList.add('show');
-      saveHistory({ email, hits: data.hitCount || 0, total: data.total || 0, ts: Date.now() });
-      loadHistory();
-    } catch (e) {
-      showError(e.message || 'Exposure search failed', 'Check your connection and try again.');
-      setProgress(100, 'Failed');
-    } finally {
-      scanBtn.disabled = false;
     }
+
+    // --- COMB + XposedOrNot (new endpoint) ---
+    const extSources = sources.filter(s => s === 'comb' || s === 'xposedornot');
+    if (extSources.length) {
+      setProgress(55, 'Querying breach sources...');
+      log('Requesting breach-source hits...', 'ok');
+      try {
+        const res = await fetch('/api/exposure-sources', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, sources: extSources }),
+        });
+        const text = await res.text();
+        let data;
+        try { data = JSON.parse(text); } catch { throw new Error(text.slice(0, 160) || 'Invalid server response'); }
+        if (res.ok && !data.error && Array.isArray(data.hits)) {
+          data.hits.forEach(h => merged.push({ origin: h.origin, login: h.login, password: h.password, posted: h.posted, source: h.source, breaches: h.breaches }));
+          if (data.results && data.results.comb && data.results.comb.ok) totalInIndex += Number(data.results.comb.total) || 0;
+          if (data.results && data.results.xposedornot && data.results.xposedornot.ok) totalInIndex += Number(data.results.xposedornot.total) || 0;
+          if (extSources.includes('comb')) { const c = data.results && data.results.comb; log(`ProxyNova COMB: ${c && c.ok ? c.hitCount : 0} credential(s)`, 'ok'); }
+          if (extSources.includes('xposedornot')) { const x = data.results && data.results.xposedornot; log(`XposedOrNot: ${x && x.ok ? x.total : 0} breach(es)`, 'ok'); }
+        } else if (res.status === 401) {
+          errors.push(`Breach sources: ${data.error || 'Login required'}`);
+          log(`Breach sources: ${data.error || 'Login required'}`, 'err');
+        } else if (res.status === 429) {
+          errors.push(`Breach sources: ${data.error || 'Rate limited'}`);
+          log(`Breach sources: ${data.error || 'Rate limited'}`, 'err');
+        } else {
+          errors.push(`Breach sources: ${data.error || ('HTTP ' + res.status)}`);
+          log(`Breach sources: ${data.error || ('HTTP ' + res.status)}`, 'err');
+        }
+      } catch (e) {
+        errors.push(`Breach sources: ${e.message || 'failed'}`);
+        log(`Breach sources failed: ${e.message || 'failed'}`, 'err');
+      }
+    }
+
+    // --- assemble results ---
+    setProgress(85, 'Processing results...');
+    currentHits = merged;
+    currentFilter = 'all';
+    setFilter('all');
+    target.textContent = san(email, 254);
+    foundCount.textContent = String(merged.length);
+    const totalVal = totalInIndex > 0 ? totalInIndex : merged.length;
+    totalCount.textContent = String(totalVal);
+
+    if (merged.length === 0) {
+      meta.textContent = errors.length
+        ? `No hits returned${errors.length ? ' · ' + errors.length + ' source error(s)' : ''}.`
+        : 'No publicly indexed hits found for this address across the selected sources.';
+    } else {
+      const srcs = [...new Set(merged.map(h => h.source).filter(Boolean))].slice(0, 4);
+      meta.textContent = `${merged.length} hit${merged.length > 1 ? 's' : ''} found${srcs.length ? ' · ' + srcs.join(', ') : ''}`;
+    }
+    if (errors.length) log(`Note: ${errors.length} source(s) reported issues.`, 'err');
+    setProgress(100, 'Complete');
+    log(`Done: ${merged.length} hit(s) across ${usedSources.join(', ') || 'sources'}`, merged.length ? 'hit' : 'ok');
+    resultsBlock.classList.add('show');
+    saveHistory({ email, hits: merged.length, total: totalInIndex, ts: Date.now() });
+    loadHistory();
+    scanBtn.disabled = false;
   }
 
   scanBtn.addEventListener('click', runSearch);
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); runSearch(); } });
 
+  function renderHashResult(data) {
+    hashResult.classList.add('show');
+    let html = '';
+    if (data.found && data.pass) {
+      html += `<div class="hash-result-row"><div class="hash-result-label">Type</div><div class="hash-result-val">${esc(data.type || 'unknown')}</div></div>`;
+      html += `<div class="hash-result-row"><div class="hash-result-label">Hash</div><div class="hash-result-val">${esc(data.hash || '')}</div></div>`;
+      html += `<div class="hash-result-row"><div class="hash-result-label">Plaintext</div><div class="hash-result-val">${esc(data.pass)}</div></div>`;
+    } else {
+      html += `<div class="hash-result-row"><div class="hash-result-label">Result</div><div class="hash-result-val">${esc(data.detail || (data.status === 'not_found' ? 'No plaintext found for this hash.' : 'Lookup failed.'))}</div></div>`;
+      if (data.type) html += `<div class="hash-result-row"><div class="hash-result-label">Type</div><div class="hash-result-val">${esc(data.type)}</div></div>`;
+    }
+    hashResult.innerHTML = html;
+  }
+
+  async function runHashLookup() {
+    clearError();
+    const hash = String(hashInput.value || '').trim();
+    if (!hash) { showError('Enter a hash to look up.', 'MD5 / NTLM / SHA1 / SHA256 supported.'); return; }
+    hashBtn.disabled = true;
+    hashResult.classList.remove('show');
+    hashResult.innerHTML = '<div class="hash-result-row"><div class="hash-result-label">Status</div><div class="hash-result-val">Looking up…</div></div>';
+    hashResult.classList.add('show');
+    try {
+      const res = await fetch('/api/exposure-sources', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ hash }),
+      });
+      const text = await res.text();
+      let data;
+      try { data = JSON.parse(text); } catch { throw new Error(text.slice(0, 160) || 'Invalid server response'); }
+      if (res.ok && !data.error) {
+        renderHashResult(data);
+      } else {
+        const msg = data.error || `HTTP ${res.status}`;
+        if (res.status === 401) showError(msg, 'Please login with Discord first.');
+        else if (res.status === 429) showError(msg, 'Please wait a moment and try again.');
+        else showError(msg, 'Try again in a moment.');
+        hashResult.classList.remove('show');
+      }
+    } catch (e) {
+      showError(e.message || 'Hash lookup failed', 'Check your connection and try again.');
+      hashResult.classList.remove('show');
+    } finally {
+      hashBtn.disabled = false;
+    }
+  }
+
+  hashBtn.addEventListener('click', runHashLookup);
+  hashInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); runHashLookup(); } });
+
   $('exposureBtnNew').addEventListener('click', () => {
     resultsBlock.classList.remove('show');
     progressBlock.classList.remove('show');
+    hashResult.classList.remove('show');
+    hashResult.innerHTML = '';
+    hashInput.value = '';
     clearError();
     input.focus();
   });

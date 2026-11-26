@@ -190,6 +190,22 @@ input::placeholder{color:var(--text-faint)}
   .exp-row>*::before{content:attr(data-label);font-family:'IBM Plex Mono',monospace;font-size:.52rem;letter-spacing:.14em;color:var(--text-faint);text-transform:uppercase}
   .exp-origin{padding-right:0}
 }
+/* exposure sources + hash lookup */
+.source-bar{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.source-check{display:inline-flex;align-items:center;gap:8px;font-family:'IBM Plex Mono',monospace;font-size:.64rem;letter-spacing:.06em;color:var(--text-muted);border:1px solid var(--border);padding:8px 12px;cursor:pointer;user-select:none;transition:all .2s var(--ease-out);background:rgba(255,255,255,.01)}
+.source-check:hover{border-color:var(--border-strong);color:#fff}
+.source-check input{accent-color:#fff;width:14px;height:14px;cursor:pointer}
+.source-check.on{border-color:#fff;color:#fff;background:rgba(255,255,255,.04)}
+.hash-section{margin-top:24px;border:1px solid var(--border);background:rgba(255,255,255,.01);padding:18px}
+.hash-section .field-label{margin-bottom:10px}
+.hash-row{display:flex;gap:10px}
+.hash-row input{flex:1;min-width:0}
+.hash-result{margin-top:14px;border:1px solid var(--border);background:rgba(255,255,255,.01);padding:14px;display:none}
+.hash-result.show{display:block}
+.hash-result-row{display:flex;gap:14px;align-items:baseline;padding:6px 0;border-bottom:1px solid var(--border-soft);font-family:'IBM Plex Mono',monospace;font-size:.7rem;flex-wrap:wrap}
+.hash-result-row:last-child{border-bottom:none}
+.hash-result-label{color:var(--text-faint);text-transform:uppercase;letter-spacing:.1em;font-size:.56rem;min-width:78px}
+.hash-result-val{color:#fff;word-break:break-all}
 /* actions */
 .actions{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-top:24px}
 .btn{font-family:'IBM Plex Mono',monospace;font-size:.66rem;letter-spacing:.08em;padding:14px 14px;border:1px solid var(--border-strong);background:rgba(255,255,255,.01);color:var(--text-muted);cursor:pointer;text-transform:uppercase;transition:all .25s var(--ease-out);text-align:center;min-height:var(--touch-min);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -481,6 +497,12 @@ footer.footer{position:fixed;bottom:0;left:0;right:0;height:48px;display:flex;al
       </div>
       <div class="hint">// checks publicly indexed stealer-log hits · partial credentials only · defensive OSINT</div>
 
+      <div class="source-bar" id="exposureSourceBar">
+        <label class="source-check on"><input type="checkbox" id="expSrcStealer" checked> StealerLogs</label>
+        <label class="source-check on"><input type="checkbox" id="expSrcComb" checked> ProxyNova COMB</label>
+        <label class="source-check on"><input type="checkbox" id="expSrcXon" checked> XposedOrNot</label>
+      </div>
+
       <div class="progress-block" id="exposureProgressBlock">
         <div class="progress-head">
           <div class="progress-status" id="exposureStatusText">Initializing...</div>
@@ -496,6 +518,15 @@ footer.footer{position:fixed;bottom:0;left:0;right:0;height:48px;display:flex;al
         <span id="exposureErrorMsg"></span>
         <div id="exposureErrorHint" style="margin-top:8px;font-size:0.72rem;color:var(--text-muted);font-family:'IBM Plex Mono',monospace;"></div>
       </div>
+
+      <div class="divider" style="margin-top:28px;"><div class="divider-label">Hash Lookup</div></div>
+      <div class="field-label">Password Hash</div>
+      <div class="hash-row">
+        <input type="text" id="exposureHashInput" placeholder="5f4dcc3b5aa765d61d8327deb882cf99" autocomplete="off" spellcheck="false" autocapitalize="none" maxlength="200" />
+        <button class="btn-scan" id="exposureHashBtn" type="button"><span>Lookup</span></button>
+      </div>
+      <div class="hint" style="margin-top:8px;">// reverse-lookup MD5 / NTLM / SHA1 / SHA256 via Weakpass · key-free · defensive OSINT</div>
+      <div class="hash-result" id="exposureHashResult"></div>
     </div>
 
     <div class="results-block" id="exposureResultsBlock">
