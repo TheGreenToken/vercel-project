@@ -25,6 +25,16 @@
   const ipType = $('ipType');
   const resultsCount = $('ipResultsCount');
   const tableBody = $('ipTableBody');
+  const mapPin = $('ipMapPin');
+  const mapEmpty = $('ipMapEmpty');
+  const pinLabel = $('ipPinLabel');
+
+  // Equirectangular projection (viewBox 1000x500): map lat/lon to %.
+  function project(lat, lon) {
+    const x = ((Number(lon) + 180) / 360) * 100;
+    const y = ((90 - Number(lat)) / 180) * 100;
+    return { x: Math.max(0, Math.min(100, x)), y: Math.max(0, Math.min(100, y)) };
+  }
 
   let currentData = null;
   let currentQuery = '';
@@ -83,6 +93,19 @@
   function renderResults() {
     const d = currentData;
     if (!d) { tableBody.innerHTML = ''; resultsCount.textContent = ''; return; }
+    const g = d.geo || {};
+    if (d.status === 'found' && g.lat != null && g.lon != null) {
+      const p = project(g.lat, g.lon);
+      mapPin.style.left = p.x + '%';
+      mapPin.style.top = p.y + '%';
+      const label = [g.city, g.country].filter(Boolean).join(' · ') || d.ip;
+      pinLabel.textContent = san(label, 80);
+      mapPin.classList.add('show');
+      mapEmpty.style.display = 'none';
+    } else {
+      mapPin.classList.remove('show');
+      mapEmpty.style.display = 'flex';
+    }
     const rows = buildRows(d);
     tableBody.innerHTML = '';
     rows.forEach(([k, v]) => {
