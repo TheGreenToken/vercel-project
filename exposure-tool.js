@@ -75,11 +75,11 @@
       const div = document.createElement('div');
       div.className = 'exp-row';
       div.innerHTML = `
-        <div class="exp-origin" title="${esc(h.origin || '')}">${esc(h.origin || '—')}</div>
-        <div class="exp-cell" title="${esc(h.login || '')}">${esc(h.login || '—')}</div>
-        <div class="exp-cell pw" title="${esc(h.password || '')}">${esc(h.password || '—')}</div>
-        <div class="exp-cell posted" title="${esc(h.posted || '')}">${esc(h.posted || '—')}</div>
-        <div><span class="exp-badge ${h.source ? 'hit' : ''}">${esc(h.source || '—')}</span></div>
+        <div class="exp-origin" data-label="Origin" title="${esc(h.origin || '')}">${esc(h.origin || '—')}</div>
+        <div class="exp-cell" data-label="Login" title="${esc(h.login || '')}">${esc(h.login || '—')}</div>
+        <div class="exp-cell pw" data-label="Password" title="${esc(h.password || '')}">${esc(h.password || '—')}</div>
+        <div class="exp-cell posted" data-label="Posted" title="${esc(h.posted || '')}">${esc(h.posted || '—')}</div>
+        <div data-label="Source"><span class="exp-badge ${h.source ? 'hit' : ''}">${esc(h.source || '—')}</span></div>
       `;
       tableBody.appendChild(div);
     });
