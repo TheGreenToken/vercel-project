@@ -173,15 +173,102 @@ function parseSearchResults(html) {
   return out;
 }
 
+// Parse a Markdown table (as rendered by the JS-rendering fetch) into hits.
+// Header: | Origin | Login | Password | Posted | Source | Files |
+function parseMarkdownTable(md) {
+  const out = { total: 0, page: 1, pageSize: 0, totalPages: 0, hits: [] };
+  if (!md) return out;
+  const lines = String(md).split(/\r?\n/);
+
+  const totalM = /([\d,]+)\s*records?/i.exec(md);
+  if (totalM) out.total = parseInt(totalM[1].replace(/,/g, ""), 10) || 0;
+  const pageM = /page\s+(\d+)\s+of\s+(\d+)/i.exec(md);
+  if (pageM) { out.page = parseInt(pageM[1], 10) || 1; out.totalPages = parseInt(pageM[2], 10) || 0; }
+  const rangeM = /(\d+)\s*[–-]\s*(\d+)/.exec(md);
+  if (rangeM) out.pageSize = parseInt(rangeM[2], 10) || 0;
+
+  // find the table header row
+  let headerIdx = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (/^\|.*Origin.*\|/i.test(lines[i]) && /Login/i.test(lines[i])) { headerIdx = i; break; }
+  }
+  if (headerIdx < 0) return out;
+
+  const splitRow = (line) => line.replace(/^\|/, "").replace(/\|$/, "").split("|").map(c => decodeEntities(stripTags(c)).trim());
+  const header = splitRow(lines[headerIdx]).map(c => c.toLowerCase());
+  const iOrigin = header.indexOf("origin");
+  const iLogin  = header.indexOf("login");
+  const iPass   = header.indexOf("password");
+  const iPosted = header.indexOf("posted");
+  const iSource = header.indexOf("source");
+  const iFiles  = header.indexOf("files");
+
+  // skip separator row (| --- | --- |)
+  let r = headerIdx + 1;
+  if (r < lines.length && /^\|[\s:\-|]+\|$/.test(lines[r].trim())) r++;
+
+  for (; r < lines.length; r++) {
+    const line = lines[r];
+    if (!/^\|/.test(line)) break;
+    const cells = splitRow(line);
+    const origin   = iOrigin >= 0 ? (cells[iOrigin] || "") : "";
+    const login    = iLogin  >= 0 ? (cells[iLogin]  || "") : "";
+    const password = iPass   >= 0 ? (cells[iPass]   || "") : "";
+    const posted   = iPosted >= 0 ? (cells[iPosted] || "") : "";
+    const source   = iSource >= 0 ? (cells[iSource] || "") : "";
+    const files    = iFiles  >= 0 ? (cells[iFiles]  || "") : "";
+    if (!origin && !login && !password) continue;
+    out.hits.push({
+      origin: String(origin).slice(0, 200),
+      login: String(login).slice(0, 200),
+      password: String(password).slice(0, 120),
+      posted: String(posted).slice(0, 120),
+      source: String(source).slice(0, 120),
+      files: String(files).slice(0, 40),
+    });
+  }
+
+  if (!out.pageSize && out.hits.length) out.pageSize = out.hits.length;
+  return out;
+}
+
+// stealerlogs.com is a Next.js SPA: search results are rendered client-side,
+// so a plain HTML fetch only yields a "Searching…" skeleton (no <table>).
+// We use a server-side JS-rendering fetch (r.jina.ai reader) that executes the
+// page JS and returns the rendered Markdown table. This is the same free web
+// tier (partial credentials) the site exposes to a browser; no API token and no
+// paywall bypass. Falls back to direct HTML parse if the reader is unavailable.
+const RENDER_BASE = "https://r.jina.ai/";
 async function searchEmail(email) {
-  const url = `${SEARCH_BASE}?q=${encodeURIComponent(email)}&type=email`;
-  const r = await fetchWithTimeout(url, {}, 15000);
-  const html = await r.text().catch(() => "");
-  if (r.status === 429) return { ok: false, status: "rate_limit", detail: "Source rate limited the request" };
-  if (r.status !== 200) return { ok: false, status: "error", detail: `Source responded HTTP ${r.status}` };
-  const parsed = parseSearchResults(html);
-  const noResults = /no more results found/i.test(html);
-  return { ok: true, status: parsed.hits.length ? "found" : (noResults ? "not_found" : "inconclusive"), detail: noResults ? "No hits in the index" : "", parsed };
+  const targetUrl = `${SEARCH_BASE}?q=${encodeURIComponent(email)}&type=email`;
+  // 1) try JS-rendered markdown
+  try {
+    const r = await fetchWithTimeout(`${RENDER_BASE}${targetUrl}`, {}, 20000);
+    const md = await r.text().catch(() => "");
+    if (r.status === 200 && md) {
+      const parsed = parseMarkdownTable(md);
+      const noResults = /no more results found/i.test(md);
+      if (parsed.hits.length || noResults || parsed.total) {
+        return { ok: true, status: parsed.hits.length ? "found" : (noResults ? "not_found" : "inconclusive"), detail: noResults ? "No hits in the index" : "", parsed };
+      }
+      // reader returned something but no recognizable table — fall through
+    } else if (r.status === 429) {
+      return { ok: false, status: "rate_limit", detail: "Source rate limited the request" };
+    }
+  } catch (_) { /* fall through to direct fetch */ }
+
+  // 2) fallback: direct HTML fetch (works only if the site ever server-renders)
+  try {
+    const r = await fetchWithTimeout(targetUrl, {}, 15000);
+    const html = await r.text().catch(() => "");
+    if (r.status === 429) return { ok: false, status: "rate_limit", detail: "Source rate limited the request" };
+    if (r.status !== 200) return { ok: false, status: "error", detail: `Source responded HTTP ${r.status}` };
+    const parsed = parseSearchResults(html);
+    const noResults = /no more results found/i.test(html);
+    return { ok: true, status: parsed.hits.length ? "found" : (noResults ? "not_found" : "inconclusive"), detail: noResults ? "No hits in the index" : "", parsed };
+  } catch (e) {
+    return { ok: false, status: "error", detail: "Network request failed" };
+  }
 }
 
 async function handler(req, res) {
