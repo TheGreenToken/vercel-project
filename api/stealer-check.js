@@ -237,37 +237,43 @@ function parseMarkdownTable(md) {
 // We use a server-side JS-rendering fetch (r.jina.ai reader) that executes the
 // page JS and returns the rendered Markdown table. This is the same free web
 // tier (partial credentials) the site exposes to a browser; no API token and no
-// paywall bypass. Falls back to direct HTML parse if the reader is unavailable.
+// paywall bypass. Any reader error is surfaced (not silently masked by the
+// empty skeleton) so the UI can show the real reason instead of "no hits".
 const RENDER_BASE = "https://r.jina.ai/";
+function readerError(status, body) {
+  const low = String(body || "").toLowerCase();
+  const snippet = String(body || "").replace(/\s+/g, " ").slice(0, 120);
+  if (status === 429 || low.includes("rate limit") || low.includes("too many requests"))
+    return { ok: false, status: "rate_limit", detail: `Exposure index rate limited the request${snippet ? ` · ${snippet}` : ""}` };
+  if (status === 401 || status === 403 || low.includes("unauthorized") || low.includes("api key"))
+    return { ok: false, status: "error", detail: `Rendering reader rejected the request (auth/IP)${snippet ? ` · ${snippet}` : ""}` };
+  if (status === 404) return { ok: false, status: "error", detail: `Rendering reader: target not found${snippet ? ` · ${snippet}` : ""}` };
+  return { ok: false, status: "error", detail: `Rendering reader responded HTTP ${status}${snippet ? ` · ${snippet}` : ""}` };
+}
 async function searchEmail(email) {
   const targetUrl = `${SEARCH_BASE}?q=${encodeURIComponent(email)}&type=email`;
-  // 1) try JS-rendered markdown
+  // 1) JS-rendered markdown via reader (primary path)
   try {
-    const r = await fetchWithTimeout(`${RENDER_BASE}${targetUrl}`, {}, 20000);
+    const r = await fetchWithTimeout(`${RENDER_BASE}${targetUrl}`, { headers: { "X-Return-Format": "markdown" } }, 28000);
     const md = await r.text().catch(() => "");
     if (r.status === 200 && md) {
+      // reader may wrap JSON error even on 200
+      if (/"error"\s*:/.test(md) && !/Origin/i.test(md)) {
+        return readerError(200, md);
+      }
       const parsed = parseMarkdownTable(md);
       const noResults = /no more results found/i.test(md);
       if (parsed.hits.length || noResults || parsed.total) {
         return { ok: true, status: parsed.hits.length ? "found" : (noResults ? "not_found" : "inconclusive"), detail: noResults ? "No hits in the index" : "", parsed };
       }
-      // reader returned something but no recognizable table — fall through
-    } else if (r.status === 429) {
-      return { ok: false, status: "rate_limit", detail: "Source rate limited the request" };
+      // 200 but no recognizable table — the rendered page may not have loaded
+      // results in time; treat as inconclusive rather than masking as not_found.
+      return { ok: true, status: "inconclusive", detail: "Rendered page did not contain results", parsed };
     }
-  } catch (_) { /* fall through to direct fetch */ }
-
-  // 2) fallback: direct HTML fetch (works only if the site ever server-renders)
-  try {
-    const r = await fetchWithTimeout(targetUrl, {}, 15000);
-    const html = await r.text().catch(() => "");
-    if (r.status === 429) return { ok: false, status: "rate_limit", detail: "Source rate limited the request" };
-    if (r.status !== 200) return { ok: false, status: "error", detail: `Source responded HTTP ${r.status}` };
-    const parsed = parseSearchResults(html);
-    const noResults = /no more results found/i.test(html);
-    return { ok: true, status: parsed.hits.length ? "found" : (noResults ? "not_found" : "inconclusive"), detail: noResults ? "No hits in the index" : "", parsed };
+    return readerError(r.status, md);
   } catch (e) {
-    return { ok: false, status: "error", detail: "Network request failed" };
+    // network/abort — do NOT fall through to the empty skeleton; surface it
+    return { ok: false, status: "error", detail: "Rendering reader timed out or failed: " + (e && e.name === "AbortError" ? "timeout" : "network") };
   }
 }
 
@@ -325,4 +331,4 @@ async function handler(req, res) {
 }
 
 module.exports = handler;
-module.exports.config = { maxDuration: 30 };
+module.exports.config = { maxDuration: 40 };
