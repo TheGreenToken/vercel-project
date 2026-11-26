@@ -28,6 +28,7 @@
   const mapPin = $('ipMapPin');
   const mapEmpty = $('ipMapEmpty');
   const pinLabel = $('ipPinLabel');
+  const cdnNote = $('ipCdnNote');
 
   // Equirectangular projection (viewBox 1000x500): map lat/lon to %.
   function project(lat, lon) {
@@ -72,11 +73,16 @@
     const g = d.geo || {};
     const rows = [];
     rows.push(['IP Address', d.ip || '—']);
+    const allIps = Array.isArray(d.allIps) ? d.allIps : (d.ip ? [d.ip] : []);
+    if (allIps.length > 1) {
+      rows.push(['All IPs', allIps.length + ' · ' + allIps.slice(0, 4).join(', ') + (allIps.length > 4 ? '…' : '')]);
+    }
+    if (d.cdn) rows.push(['CDN / Edge', d.cdn.cdn + ' (AS' + d.cdn.asn + ')']);
     rows.push(['Type', (d.type || '—').toUpperCase()]);
     rows.push(['Country', [g.country, g.countryCode].filter(Boolean).join(' / ') || '—']);
     rows.push(['Region', g.region || '—']);
     rows.push(['City', [g.city, g.zip].filter(Boolean).join(', ') || '—']);
-    rows.push(['Coordinates', (g.lat != null && g.lon != null) ? `${g.lat}, ${g.lon}` : '—']);
+    rows.push(['Coordinates', (g.lat != null && g.lon != null) ? g.lat + ', ' + g.lon : '—']);
     rows.push(['Timezone', g.timezone || '—']);
     rows.push(['ISP', g.isp || '—']);
     rows.push(['Organization', g.org || '—']);
@@ -105,6 +111,13 @@
     } else {
       mapPin.classList.remove('show');
       mapEmpty.style.display = 'flex';
+    }
+    if (d.cdn) {
+      cdnNote.style.display = 'block';
+      cdnNote.innerHTML = '<b>CDN edge</b> · This host resolves to <b>' + esc(d.cdn.cdn) + '</b> (AS' + esc(d.cdn.asn) + '). The location and ASN above describe the CDN edge, not the origin server — so multiple sites behind the same CDN share identical edge data. The distinguishing signals are the resolved IP(s) and reverse DNS.';
+    } else {
+      cdnNote.style.display = 'none';
+      cdnNote.innerHTML = '';
     }
     const rows = buildRows(d);
     tableBody.innerHTML = '';
@@ -164,8 +177,12 @@
       if (data.status === 'not_found') {
         meta.textContent = 'No DNS resolution found for this target.';
       } else if (data.status === 'found') {
+        const allIps = Array.isArray(data.allIps) ? data.allIps : (data.ip ? [data.ip] : []);
         const bits = [g.country, g.city].filter(Boolean).slice(0, 2);
-        meta.textContent = bits.length ? `${bits.join(' · ')}${g.isp ? ' · ' + g.isp : ''}` : 'Lookup complete';
+        let metaText = bits.length ? bits.join(' · ') + (g.isp ? ' · ' + g.isp : '') : 'Lookup complete';
+        if (allIps.length > 1) metaText += ' · ' + allIps.length + ' IPs';
+        if (data.cdn) metaText += ' · ' + data.cdn.cdn;
+        meta.textContent = metaText;
       } else {
         meta.textContent = data.detail || 'Lookup complete';
       }

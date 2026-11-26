@@ -59,16 +59,20 @@ async function fetchWithTimeout(url, opts = {}, ms = 12000) {
   } finally { clearTimeout(t); }
 }
 
-// Forward resolution: if the query is a hostname, resolve it to an IP.
+// Forward resolution: if the query is a hostname, resolve it to one or more IPs.
 async function resolveTarget(query) {
   if (IPV4_RE.test(query) || (/^[0-9a-fA-F:]+$/.test(query) && query.indexOf(":") >= 0)) {
-    return { query, ip: query, type: query.indexOf(":") >= 0 ? "ipv6" : "ipv4", source: "literal" };
+    return { query, ip: query, allIps: [query], type: query.indexOf(":") >= 0 ? "ipv6" : "ipv4", source: "literal" };
   }
   try {
-    const { address, family } = await dns.lookup(query, { all: false });
-    return { query, ip: address, type: family === 6 ? "ipv6" : "ipv4", source: "dns" };
+    const results = await dns.lookup(query, { all: true, ipVersion: 4 });
+    const allIps = results.map(r => r.address).filter(Boolean);
+    if (!allIps.length) {
+      return { query, ip: "", allIps: [], type: "", source: "unresolved", error: "Hostname could not be resolved (NXDOMAIN or no DNS record)" };
+    }
+    return { query, ip: allIps[0], allIps, type: "ipv4", source: "dns" };
   } catch (_) {
-    return { query, ip: "", type: "", source: "unresolved", error: "Hostname could not be resolved (NXDOMAIN or no DNS record)" };
+    return { query, ip: "", allIps: [], type: "", source: "unresolved", error: "Hostname could not be resolved (NXDOMAIN or no DNS record)" };
   }
 }
 
@@ -81,6 +85,29 @@ async function reverseLookup(ip) {
   } catch (_) {
     return [];
   }
+}
+
+// Known CDN / hosting providers. When a hostname resolves to one of these,
+// the geolocation describes the CDN edge, not the origin server — which is why
+// many sites look identical (they share the same edge ASN/provider/location).
+const CDN_SIGNATURES = [
+  { re: /cloudflare/i, cdn: "Cloudflare", asn: "13335" },
+  { re: /akamai/i, cdn: "Akamai", asn: "20940" },
+  { re: /fastly/i, cdn: "Fastly", asn: "54113" },
+  { re: /amazon/i, cdn: "Amazon CloudFront", asn: "16509" },
+  { re: /google/i, cdn: "Google Cloud", asn: "15169" },
+  { re: /microsoft/i, cdn: "Microsoft Azure", asn: "8075" },
+  { re: /digitalocean/i, cdn: "DigitalOcean", asn: "14061" },
+  { re: /linode|akamai/i, cdn: "Akamai/Linode", asn: "63949" },
+];
+
+function detectCdn(geo) {
+  if (!geo) return null;
+  const hay = `${geo.org || ""} ${geo.isp || ""} ${geo.as || ""} ${geo.asname || ""}`;
+  for (const sig of CDN_SIGNATURES) {
+    if (sig.re.test(hay)) return { cdn: sig.cdn, asn: sig.asn };
+  }
+  return null;
 }
 
 // Geolocation + ASN/ISP via ip-api.com free endpoint.
@@ -97,27 +124,25 @@ async function geoLookup(ip) {
     if (data.status && data.status !== "success") {
       return { ok: false, detail: `Geolocation: ${data.message || "lookup failed"}` };
     }
-    return {
-      ok: true,
-      geo: {
-        country: data.country || "",
-        countryCode: data.countryCode || "",
-        region: data.regionName || data.region || "",
-        city: data.city || "",
-        zip: data.zip || "",
-        lat: data.lat != null ? data.lat : null,
-        lon: data.lon != null ? data.lon : null,
-        timezone: data.timezone || "",
-        isp: data.isp || "",
-        org: data.org || "",
-        as: data.as || "",
-        asname: data.asname || "",
-        reverse: data.reverse || "",
-        mobile: !!data.mobile,
-        proxy: !!data.proxy,
-        hosting: !!data.hosting,
-      },
+    const geo = {
+      country: data.country || "",
+      countryCode: data.countryCode || "",
+      region: data.regionName || data.region || "",
+      city: data.city || "",
+      zip: data.zip || "",
+      lat: data.lat != null ? data.lat : null,
+      lon: data.lon != null ? data.lon : null,
+      timezone: data.timezone || "",
+      isp: data.isp || "",
+      org: data.org || "",
+      as: data.as || "",
+      asname: data.asname || "",
+      reverse: data.reverse || "",
+      mobile: !!data.mobile,
+      proxy: !!data.proxy,
+      hosting: !!data.hosting,
     };
+    return { ok: true, geo, cdn: detectCdn(geo) };
   } catch (e) {
     return { ok: false, detail: "Geolocation service timed out or failed: " + (e && e.name === "AbortError" ? "timeout" : "network") };
   }
@@ -157,7 +182,7 @@ async function handler(req, res) {
   const started = Date.now();
   const target = await resolveTarget(query);
   if (target.error) {
-    return json(res, 200, { query, status: "not_found", detail: target.error, ip: "", type: "", geo: null, reverse: [], durationMs: Date.now() - started });
+    return json(res, 200, { query, status: "not_found", detail: target.error, ip: "", allIps: [], type: "", geo: null, cdn: null, reverse: [], durationMs: Date.now() - started });
   }
 
   const [geoRes, reverse] = await Promise.all([
@@ -169,16 +194,18 @@ async function handler(req, res) {
 
   if (!geoRes.ok) {
     // reverse DNS may still be useful even if geo failed
-    return json(res, 502, { query, status: "error", detail: geoRes.detail, ip: target.ip, type: target.type, geo: null, reverse, durationMs });
+    return json(res, 502, { query, status: "error", detail: geoRes.detail, ip: target.ip, allIps: target.allIps, type: target.type, geo: null, cdn: null, reverse, durationMs });
   }
 
   return json(res, 200, {
     query,
     status: "found",
     ip: target.ip,
+    allIps: target.allIps,
     type: target.type,
     source: target.source,
     geo: geoRes.geo,
+    cdn: geoRes.cdn,
     reverse,
     durationMs,
   });
