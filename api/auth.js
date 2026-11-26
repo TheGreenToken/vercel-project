@@ -1,10 +1,10 @@
 "use strict";
 
 const crypto = require("crypto");
-const kv     = require("./kv");
-const { kvRateLimit, getCorsHeaders } = require("./middleware");
-const { createSessionToken, verifySessionToken, blacklistToken } = require("./session");
-const { upsertUserLogin, getUserByDiscordId, getDatabaseUrl } = require("./db");
+const kv     = require("../lib/kv");
+const { kvRateLimit, getCorsHeaders } = require("../lib/middleware");
+const { createSessionToken, verifySessionToken, blacklistToken } = require("../lib/session");
+const { upsertUserLogin, getUserByDiscordId, getDatabaseUrl } = require("../lib/db");
 
 const SESSION_COOKIE = "mono_session";
 const STATE_TTL = 10 * 60; // 10 min

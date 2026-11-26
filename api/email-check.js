@@ -1,9 +1,9 @@
 "use strict";
 
 const crypto = require("crypto");
-const kv     = require("./kv");
-const { kvRateLimit, getCorsHeaders } = require("./middleware");
-const { verifySessionToken, isTokenBlacklisted } = require("./session");
+const kv     = require("../lib/kv");
+const { kvRateLimit, getCorsHeaders } = require("../lib/middleware");
+const { verifySessionToken, isTokenBlacklisted } = require("../lib/session");
 
 const EMAIL_RE = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/;
 

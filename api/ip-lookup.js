@@ -9,9 +9,9 @@
 // never attempt to bypass any rate limit, paywall, or auth.
 
 const dns = require("dns").promises;
-const kv = require("./kv");
-const { kvRateLimit, getCorsHeaders } = require("./middleware");
-const { verifySessionToken, isTokenBlacklisted } = require("./session");
+const kv = require("../lib/kv");
+const { kvRateLimit, getCorsHeaders } = require("../lib/middleware");
+const { verifySessionToken, isTokenBlacklisted } = require("../lib/session");
 
 const IPAPI_BASE = "http://ip-api.com/json/";
 const IPV4_RE = /^(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)$/;
