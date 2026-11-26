@@ -8,9 +8,6 @@
     },
     "api/stealer-check.js": {
       "maxDuration": 60
-    },
-    "api/breach-check.js": {
-      "maxDuration": 30
     }
   },
   "rewrites": [
