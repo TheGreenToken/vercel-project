@@ -11,6 +11,12 @@
     },
     "api/ip-lookup.js": {
       "maxDuration": 30
+    },
+    "api/domain-lookup.js": {
+      "maxDuration": 30
+    },
+    "api/username-check.js": {
+      "maxDuration": 60
     }
   },
   "rewrites": [

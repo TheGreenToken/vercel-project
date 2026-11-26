@@ -305,6 +305,8 @@ footer.footer{position:fixed;bottom:0;left:0;right:0;height:48px;display:flex;al
     <button class="tool-tab" id="toolTabEmail" type="button" data-tool="email">Email Footprint</button>
     <button class="tool-tab" id="toolTabExposure" type="button" data-tool="exposure">Exposure Search</button>
     <button class="tool-tab" id="toolTabIp" type="button" data-tool="ip">IP / Host Lookup</button>
+    <button class="tool-tab" id="toolTabDomain" type="button" data-tool="domain">Domain Lookup</button>
+    <button class="tool-tab" id="toolTabUsername" type="button" data-tool="username">Username Search</button>
   </div>
 
   <div class="tool-panel active" id="toolGithub">
@@ -679,11 +681,157 @@ footer.footer{position:fixed;bottom:0;left:0;right:0;height:48px;display:flex;al
     </div>
   </div>
 
+  <div class="tool-panel" id="toolDomain">
+    <div class="panel input-section">
+      <div class="divider"><div class="divider-label">Domain Lookup</div></div>
+      <div class="input-row-top">
+        <div class="field-label">Domain</div>
+        <div class="depth-bar">
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:.62rem;color:var(--text-faint);letter-spacing:.08em;text-transform:uppercase;">whois · dns · certificates</span>
+        </div>
+      </div>
+      <div class="input-row">
+        <input type="text" id="domainInput" placeholder="example.com"
+               autocomplete="off" spellcheck="false" autocapitalize="none"
+               maxlength="253" />
+        <button class="btn-scan" id="domainScanBtn" type="button"><span>Lookup</span></button>
+      </div>
+      <div class="hint">// resolves RDAP/WHOIS registration, DNS records and certificate-transparency data · key-free · defensive OSINT</div>
+
+      <div class="progress-block" id="domainProgressBlock">
+        <div class="progress-head">
+          <div class="progress-status" id="domainStatusText">Initializing...</div>
+          <div class="progress-pct" id="domainPctText">0%</div>
+        </div>
+        <div class="progress-bar"><div class="progress-fill" id="domainProgressFill"></div></div>
+        <div class="progress-sub"><div class="progress-sub-fill" id="domainSubFill"></div></div>
+        <div class="log-block" id="domainLogBlock" aria-live="polite"></div>
+      </div>
+
+      <div class="error-block" id="domainErrorBlock" role="alert">
+        <strong>// Error</strong>
+        <span id="domainErrorMsg"></span>
+        <div id="domainErrorHint" style="margin-top:8px;font-size:0.72rem;color:var(--text-muted);font-family:'IBM Plex Mono',monospace;"></div>
+      </div>
+    </div>
+
+    <div class="results-block" id="domainResultsBlock">
+      <div class="profile-strip">
+        <div class="avatar-wrap">
+          <div class="profile-avatar" id="domainAvatar" style="display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Mono',monospace;font-size:1.3rem;color:var(--text-muted);background:var(--bg-subtle);">DNS</div>
+        </div>
+        <div class="profile-info">
+          <div class="profile-handle"><span id="domainTarget"></span></div>
+          <div class="profile-meta" id="domainMeta"></div>
+        </div>
+        <div class="profile-stats">
+          <div class="stat-item">
+            <div class="stat-num" id="domainStat1">—</div>
+            <div class="stat-label">Registrar</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-num" id="domainStat2">—</div>
+            <div class="stat-label">Subdomains</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="divider" style="margin-top:0;margin-bottom:16px"><div class="divider-label">Registration & Infrastructure</div></div>
+      <div class="results-head">
+        <div class="results-title">Domain Report</div>
+        <div class="results-count" id="domainResultsCount"></div>
+      </div>
+      <div class="ip-report">
+        <div class="ip-grid" id="domainGridBody"></div>
+      </div>
+      <div class="actions">
+        <button class="btn" id="domainBtnCopy" type="button">&#x2398; <span id="domainLblCopy">Copy</span></button>
+        <button class="btn" id="domainBtnTxt" type="button">&#x2913; <span>Download TXT</span></button>
+        <button class="btn" id="domainBtnJson" type="button">&#x2913; <span>Export JSON</span></button>
+        <button class="btn" id="domainBtnNew" type="button">&#x21BA; New Lookup</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="tool-panel" id="toolUsername">
+    <div class="panel input-section">
+      <div class="divider"><div class="divider-label">Username Search</div></div>
+      <div class="input-row-top">
+        <div class="field-label">Username</div>
+        <div class="depth-bar">
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:.62rem;color:var(--text-faint);letter-spacing:.08em;text-transform:uppercase;">45+ platforms · presence check</span>
+        </div>
+      </div>
+      <div class="input-row">
+        <input type="text" id="usernameInput" placeholder="octocat"
+               autocomplete="off" spellcheck="false" autocapitalize="none"
+               maxlength="64" />
+        <button class="btn-scan" id="usernameScanBtn" type="button"><span>Search</span></button>
+      </div>
+      <div class="hint">// checks a username for existing accounts across public platforms · key-free · defensive OSINT</div>
+
+      <div class="progress-block" id="usernameProgressBlock">
+        <div class="progress-head">
+          <div class="progress-status" id="usernameStatusText">Initializing...</div>
+          <div class="progress-pct" id="usernamePctText">0%</div>
+        </div>
+        <div class="progress-bar"><div class="progress-fill" id="usernameProgressFill"></div></div>
+        <div class="progress-sub"><div class="progress-sub-fill" id="usernameSubFill"></div></div>
+        <div class="log-block" id="usernameLogBlock" aria-live="polite"></div>
+      </div>
+
+      <div class="error-block" id="usernameErrorBlock" role="alert">
+        <strong>// Error</strong>
+        <span id="usernameErrorMsg"></span>
+        <div id="usernameErrorHint" style="margin-top:8px;font-size:0.72rem;color:var(--text-muted);font-family:'IBM Plex Mono',monospace;"></div>
+      </div>
+    </div>
+
+    <div class="results-block" id="usernameResultsBlock">
+      <div class="profile-strip">
+        <div class="avatar-wrap">
+          <div class="profile-avatar" id="usernameAvatar" style="display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Mono',monospace;font-size:1.3rem;color:var(--text-muted);background:var(--bg-subtle);">@</div>
+        </div>
+        <div class="profile-info">
+          <div class="profile-handle"><span id="usernameTarget"></span></div>
+          <div class="profile-meta" id="usernameMeta"></div>
+        </div>
+        <div class="profile-stats">
+          <div class="stat-item">
+            <div class="stat-num" id="usernameStat1">—</div>
+            <div class="stat-label">Found</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-num" id="usernameStat2">—</div>
+            <div class="stat-label">Platforms</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="divider" style="margin-top:0;margin-bottom:16px"><div class="divider-label">Platform Presence</div></div>
+      <div class="results-head">
+        <div class="results-title">Account Report</div>
+        <div class="results-count" id="usernameResultsCount"></div>
+      </div>
+      <div class="ip-report">
+        <div class="ip-grid" id="usernameGridBody"></div>
+      </div>
+      <div class="actions">
+        <button class="btn" id="usernameBtnCopy" type="button">&#x2398; <span id="usernameLblCopy">Copy</span></button>
+        <button class="btn" id="usernameBtnTxt" type="button">&#x2913; <span>Download TXT</span></button>
+        <button class="btn" id="usernameBtnJson" type="button">&#x2913; <span>Export JSON</span></button>
+        <button class="btn" id="usernameBtnNew" type="button">&#x21BA; New Search</button>
+      </div>
+    </div>
+  </div>
+
 </div>
 
 <script src="/app.js" defer></script>
 <script src="/email-tool.js" defer></script>
 <script src="/exposure-tool.js" defer></script>
 <script src="/ip-tool.js" defer></script>
+<script src="/domain-tool.js" defer></script>
+<script src="/username-tool.js" defer></script>
 </body>
 </html>
