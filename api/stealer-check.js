@@ -254,7 +254,7 @@ async function searchEmail(email) {
   const targetUrl = `${SEARCH_BASE}?q=${encodeURIComponent(email)}&type=email`;
   // 1) JS-rendered markdown via reader (primary path)
   try {
-    const r = await fetchWithTimeout(`${RENDER_BASE}${targetUrl}`, { headers: { "X-Return-Format": "markdown" } }, 28000);
+    const r = await fetchWithTimeout(`${RENDER_BASE}${targetUrl}`, { headers: { "X-Return-Format": "markdown" } }, 45000);
     const md = await r.text().catch(() => "");
     if (r.status === 200 && md) {
       // reader may wrap JSON error even on 200
@@ -331,4 +331,4 @@ async function handler(req, res) {
 }
 
 module.exports = handler;
-module.exports.config = { maxDuration: 40 };
+module.exports.config = { maxDuration: 60 };
