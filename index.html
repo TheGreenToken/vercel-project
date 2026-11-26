@@ -228,6 +228,19 @@ footer.footer{position:fixed;bottom:0;left:0;right:0;height:48px;display:flex;al
 @media (max-width:380px){.actions{grid-template-columns:1fr}.profile-stats{display:none}.hero-meta{display:none}}
 @media (hover:none) and (pointer:coarse){.btn-scan,.btn,.auth-login-btn,.auth-logout-btn,.depth-btn,.filter-btn,.history-rescan{cursor:pointer}}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+/* ---- IP map ---- */
+.map-card{position:relative;width:100%;aspect-ratio:2/1;border:1px solid var(--border);background:radial-gradient(120% 100% at 50% 0%,#101519,#0a0d10);overflow:hidden;margin-bottom:24px}
+.world-map{position:absolute;inset:0;width:100%;height:100%;color:#1c2a33}
+.map-grid{position:absolute;inset:0;background-image:linear-gradient(rgba(255,255,255,.04) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.04) 1px,transparent 1px);background-size:25% 25%;pointer-events:none}
+.map-empty{position:absolute;inset:0;display:none;align-items:center;justify-content:center;font-family:'IBM Plex Mono',monospace;font-size:.7rem;color:var(--text-faint);letter-spacing:.08em;text-transform:uppercase}
+.map-pin{position:absolute;left:50%;top:50%;transform:translate(-50%,-100%) scale(.6);opacity:0;transition:left .6s var(--ease-out),top .6s var(--ease-out),opacity .4s ease,transform .6s var(--ease-out);pointer-events:none;z-index:2}
+.map-pin.show{opacity:1;transform:translate(-50%,-100%) scale(1)}
+.pin-dot{display:block;width:12px;height:12px;border-radius:50%;background:#ff3b3b;border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.4),0 2px 8px rgba(255,59,59,.6);position:relative;z-index:2}
+.pin-pulse{position:absolute;left:50%;top:50%;width:12px;height:12px;border-radius:50%;background:rgba(255,59,59,.5);transform:translate(-50%,-50%);animation:pinPulse 2s ease-out infinite;z-index:1}
+@keyframes pinPulse{0%{transform:translate(-50%,-50%) scale(1);opacity:.6}100%{transform:translate(-50%,-50%) scale(4);opacity:0}}
+.pin-label{position:absolute;left:50%;top:-26px;transform:translateX(-50%);white-space:nowrap;font-family:'IBM Plex Mono',monospace;font-size:.62rem;letter-spacing:.06em;color:#fff;background:rgba(0,0,0,.7);border:1px solid var(--border-strong);padding:3px 8px;border-radius:2px}
+.pin-label::after{content:'';position:absolute;left:50%;bottom:-4px;transform:translateX(-50%) rotate(45deg);width:8px;height:8px;background:rgba(0,0,0,.7);border-right:1px solid var(--border-strong);border-bottom:1px solid var(--border-strong)}
+@media (prefers-reduced-motion:reduce){.pin-pulse{animation:none;opacity:.2}}
 </style>
 </head>
 <body>
@@ -604,6 +617,17 @@ footer.footer{position:fixed;bottom:0;left:0;right:0;height:48px;display:flex;al
             <div class="stat-label">Type</div>
           </div>
         </div>
+      </div>
+
+      <div class="map-card">
+        <img class="world-map" src="/world-map.svg" alt="World map showing the located target" />
+        <div class="map-grid"></div>
+        <div class="map-pin" id="ipMapPin">
+          <span class="pin-pulse"></span>
+          <span class="pin-dot"></span>
+          <span class="pin-label" id="ipPinLabel"></span>
+        </div>
+        <div class="map-empty" id="ipMapEmpty">// no geolocation coordinates for this target</div>
       </div>
 
       <div class="divider" style="margin-top:0;margin-bottom:16px"><div class="divider-label">Location & Network</div></div>
