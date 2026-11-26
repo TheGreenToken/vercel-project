@@ -8,9 +8,9 @@
 // attempt to bypass any rate limit, paywall, or auth.
 
 const crypto = require("crypto");
-const kv = require("./kv");
-const { kvRateLimit, getCorsHeaders } = require("./middleware");
-const { verifySessionToken, isTokenBlacklisted } = require("./session");
+const kv = require("../lib/kv");
+const { kvRateLimit, getCorsHeaders } = require("../lib/middleware");
+const { verifySessionToken, isTokenBlacklisted } = require("../lib/session");
 
 const USERNAME_RE = /^[a-zA-Z0-9._-]{1,64}$/;
 

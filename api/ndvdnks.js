@@ -1,9 +1,9 @@
 "use strict";
 
 const crypto = require("crypto");
-const kv     = require("./kv");
-const { getCorsHeaders } = require("./middleware");
-const { listUsers, listLoginLogs, getDbStats, getDatabaseUrl, listScanLogs, getScanStats } = require("./db");
+const kv     = require("../lib/kv");
+const { getCorsHeaders } = require("../lib/middleware");
+const { listUsers, listLoginLogs, getDbStats, getDatabaseUrl, listScanLogs, getScanStats } = require("../lib/db");
 
 const CTRL_RE = /[^\x20-\x7E]/g;
 

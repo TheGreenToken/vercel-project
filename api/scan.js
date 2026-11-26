@@ -2,10 +2,10 @@
 
 const https  = require("https");
 const crypto = require("crypto");
-const kv     = require("./kv");
-const { kvRateLimit, getCorsHeaders } = require("./middleware");
-const { verifySessionToken, isTokenBlacklisted } = require("./session");
-const { getUserByDiscordId, getDatabaseUrl, insertScanLog } = require("./db");
+const kv     = require("../lib/kv");
+const { kvRateLimit, getCorsHeaders } = require("../lib/middleware");
+const { verifySessionToken, isTokenBlacklisted } = require("../lib/session");
+const { getUserByDiscordId, getDatabaseUrl, insertScanLog } = require("../lib/db");
 
 const GH          = "api.github.com";
 const USERNAME_RE = /^[a-zA-Z0-9-]{1,39}$/;
