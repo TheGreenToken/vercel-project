@@ -265,6 +265,7 @@ footer.footer{position:fixed;bottom:0;left:0;right:0;height:48px;display:flex;al
     <button class="tool-tab active" id="toolTabGithub" type="button" data-tool="github">GitHub Scanner</button>
     <button class="tool-tab" id="toolTabEmail" type="button" data-tool="email">Email Footprint</button>
     <button class="tool-tab" id="toolTabExposure" type="button" data-tool="exposure">Exposure Search</button>
+    <button class="tool-tab" id="toolTabIp" type="button" data-tool="ip">IP / Host Lookup</button>
   </div>
 
   <div class="tool-panel active" id="toolGithub">
@@ -550,10 +551,86 @@ footer.footer{position:fixed;bottom:0;left:0;right:0;height:48px;display:flex;al
     </div>
   </div>
 
+  <div class="tool-panel" id="toolIp">
+    <div class="panel input-section">
+      <div class="divider"><div class="divider-label">IP / Host Lookup</div></div>
+      <div class="input-row-top">
+        <div class="field-label">IP Address or Hostname</div>
+        <div class="depth-bar">
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:.62rem;color:var(--text-faint);letter-spacing:.08em;text-transform:uppercase;">geolocation · asn · reverse dns</span>
+        </div>
+      </div>
+      <div class="input-row">
+        <input type="text" id="ipInput" placeholder="8.8.8.8 or example.com"
+               autocomplete="off" spellcheck="false" autocapitalize="none"
+               maxlength="253" />
+        <button class="btn-scan" id="ipScanBtn" type="button"><span>Lookup</span></button>
+      </div>
+      <div class="hint">// resolves hostnames to an IP, geolocates it and runs a reverse-DNS check · key-free · defensive OSINT</div>
+
+      <div class="progress-block" id="ipProgressBlock">
+        <div class="progress-head">
+          <div class="progress-status" id="ipStatusText">Initializing...</div>
+          <div class="progress-pct" id="ipPctText">0%</div>
+        </div>
+        <div class="progress-bar"><div class="progress-fill" id="ipProgressFill"></div></div>
+        <div class="progress-sub"><div class="progress-sub-fill" id="ipSubFill"></div></div>
+        <div class="log-block" id="ipLogBlock" aria-live="polite"></div>
+      </div>
+
+      <div class="error-block" id="ipErrorBlock" role="alert">
+        <strong>// Error</strong>
+        <span id="ipErrorMsg"></span>
+        <div id="ipErrorHint" style="margin-top:8px;font-size:0.72rem;color:var(--text-muted);font-family:'IBM Plex Mono',monospace;"></div>
+      </div>
+    </div>
+
+    <div class="results-block" id="ipResultsBlock">
+      <div class="profile-strip">
+        <div class="avatar-wrap">
+          <div class="profile-avatar" id="ipAvatar" style="display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Mono',monospace;font-size:1.3rem;color:var(--text-muted);background:var(--bg-subtle);">IP</div>
+        </div>
+        <div class="profile-info">
+          <div class="profile-handle"><span id="ipTarget"></span></div>
+          <div class="profile-meta" id="ipMeta"></div>
+        </div>
+        <div class="profile-stats">
+          <div class="stat-item">
+            <div class="stat-num" id="ipValue">—</div>
+            <div class="stat-label">Address</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-num" id="ipType">—</div>
+            <div class="stat-label">Type</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="divider" style="margin-top:0;margin-bottom:16px"><div class="divider-label">Location & Network</div></div>
+      <div class="results-head">
+        <div class="results-title">Lookup Report</div>
+        <div class="results-count" id="ipResultsCount"></div>
+      </div>
+      <div class="table-wrap">
+        <div class="table-head" style="grid-template-columns:160px 1fr;min-width:420px;">
+          <div>Field</div><div>Value</div>
+        </div>
+        <div id="ipTableBody"></div>
+      </div>
+      <div class="actions">
+        <button class="btn" id="ipBtnCopy" type="button">&#x2398; <span id="ipLblCopy">Copy</span></button>
+        <button class="btn" id="ipBtnTxt" type="button">&#x2913; <span>Download TXT</span></button>
+        <button class="btn" id="ipBtnJson" type="button">&#x2913; <span>Export JSON</span></button>
+        <button class="btn" id="ipBtnNew" type="button">&#x21BA; New Lookup</button>
+      </div>
+    </div>
+  </div>
+
 </div>
 
 <script src="/app.js" defer></script>
 <script src="/email-tool.js" defer></script>
 <script src="/exposure-tool.js" defer></script>
+<script src="/ip-tool.js" defer></script>
 </body>
 </html>
