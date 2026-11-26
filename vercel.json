@@ -8,6 +8,9 @@
     },
     "api/stealer-check.js": {
       "maxDuration": 40
+    },
+    "api/exposure-sources.js": {
+      "maxDuration": 40
     }
   },
   "rewrites": [
