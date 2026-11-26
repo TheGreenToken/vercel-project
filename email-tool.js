@@ -8,7 +8,7 @@
 
   // ---- Tool tab router ----
   const tabs = Array.from(document.querySelectorAll('.tool-tab[data-tool]'));
-  const panels = { github: $('toolGithub'), email: $('toolEmail'), exposure: $('toolExposure') };
+  const panels = { github: $('toolGithub'), email: $('toolEmail'), exposure: $('toolExposure'), breach: $('toolBreach') };
   function activateTool(name) {
     tabs.forEach(t => t.classList.toggle('active', t.dataset.tool === name));
     Object.entries(panels).forEach(([k, el]) => { if (el) el.classList.toggle('active', k === name); });

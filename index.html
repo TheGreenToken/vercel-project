@@ -265,6 +265,7 @@ footer.footer{position:fixed;bottom:0;left:0;right:0;height:48px;display:flex;al
     <button class="tool-tab active" id="toolTabGithub" type="button" data-tool="github">GitHub Scanner</button>
     <button class="tool-tab" id="toolTabEmail" type="button" data-tool="email">Email Footprint</button>
     <button class="tool-tab" id="toolTabExposure" type="button" data-tool="exposure">Exposure Search</button>
+    <button class="tool-tab" id="toolTabBreach" type="button" data-tool="breach">Breach Check</button>
   </div>
 
   <div class="tool-panel active" id="toolGithub">
@@ -550,10 +551,92 @@ footer.footer{position:fixed;bottom:0;left:0;right:0;height:48px;display:flex;al
     </div>
   </div>
 
+  <div class="tool-panel" id="toolBreach">
+    <div class="panel input-section">
+      <div class="divider"><div class="divider-label">Email Breach Check</div></div>
+      <div class="input-row-top">
+        <div class="field-label">Email Address</div>
+        <div class="depth-bar">
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:.62rem;color:var(--text-faint);letter-spacing:.08em;text-transform:uppercase;">breach record lookup</span>
+        </div>
+      </div>
+      <div class="input-row">
+        <div class="input-at">@</div>
+        <input type="text" id="breachInput" placeholder="target@example.com"
+               autocomplete="off" spellcheck="false" autocapitalize="none"
+               maxlength="254" />
+        <button class="btn-scan" id="breachScanBtn" type="button"><span>Check</span></button>
+      </div>
+      <div class="hint">// checks known data-breach records for this address · key-free · defensive OSINT</div>
+
+      <div class="progress-block" id="breachProgressBlock">
+        <div class="progress-head">
+          <div class="progress-status" id="breachStatusText">Initializing...</div>
+          <div class="progress-pct" id="breachPctText">0%</div>
+        </div>
+        <div class="progress-bar"><div class="progress-fill" id="breachProgressFill"></div></div>
+        <div class="progress-sub"><div class="progress-sub-fill" id="breachSubFill"></div></div>
+        <div class="log-block" id="breachLogBlock" aria-live="polite"></div>
+      </div>
+
+      <div class="error-block" id="breachErrorBlock" role="alert">
+        <strong>// Error</strong>
+        <span id="breachErrorMsg"></span>
+        <div id="breachErrorHint" style="margin-top:8px;font-size:0.72rem;color:var(--text-muted);font-family:'IBM Plex Mono',monospace;"></div>
+      </div>
+    </div>
+
+    <div class="results-block" id="breachResultsBlock">
+      <div class="profile-strip">
+        <div class="avatar-wrap">
+          <div class="profile-avatar" id="breachAvatar" style="display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Mono',monospace;font-size:1.4rem;color:var(--text-muted);background:var(--bg-subtle);">@</div>
+        </div>
+        <div class="profile-info">
+          <div class="profile-handle"><span class="at"></span><span id="breachTarget"></span></div>
+          <div class="profile-meta" id="breachMeta"></div>
+        </div>
+        <div class="profile-stats">
+          <div class="stat-item">
+            <div class="stat-num red" id="breachCount">&#8212;</div>
+            <div class="stat-label">Breaches</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="divider" style="margin-top:0;margin-bottom:16px"><div class="divider-label">Breach Records</div></div>
+      <div class="results-head">
+        <div class="results-title">Breach Report</div>
+        <div class="results-count" id="breachResultsCount"></div>
+      </div>
+      <div class="table-wrap">
+        <div class="table-head" style="grid-template-columns:1fr 110px;min-width:480px;">
+          <div>Breach Source</div><div>Records</div>
+        </div>
+        <div id="breachTableBody"></div>
+      </div>
+      <div class="actions">
+        <button class="btn red-btn" id="breachBtnCopy" type="button">&#x2398; <span id="breachLblCopy">Copy Breaches</span></button>
+        <button class="btn" id="breachBtnTxt" type="button">&#x2913; <span id="breachLblTxt">Download TXT</span></button>
+        <button class="btn" id="breachBtnJson" type="button">&#x2913; <span id="breachLblJson">Export JSON</span></button>
+        <button class="btn" id="breachBtnNew" type="button">&#x21BA; New Search</button>
+      </div>
+    </div>
+
+    <div class="divider" style="margin-top:28px;"><div class="divider-label">Password Breach Check</div></div>
+    <div class="field-label">Password</div>
+    <div class="input-row">
+      <input type="text" id="breachPwInput" placeholder="password to check" autocomplete="off" spellcheck="false" autocapitalize="none" maxlength="128" />
+      <button class="btn-scan" id="breachPwBtn" type="button"><span>Check</span></button>
+    </div>
+    <div class="hint" style="margin-top:8px;">// k-anonymity: only the first 5 chars of the SHA-1 hash leave the server · the password itself is never sent</div>
+    <div class="hash-result" id="breachPwResult"></div>
+  </div>
+
 </div>
 
 <script src="/app.js" defer></script>
 <script src="/email-tool.js" defer></script>
 <script src="/exposure-tool.js" defer></script>
+<script src="/breach-tool.js" defer></script>
 </body>
 </html>
