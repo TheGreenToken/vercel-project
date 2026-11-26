@@ -242,6 +242,30 @@ footer.footer{position:fixed;bottom:0;left:0;right:0;height:48px;display:flex;al
 .pin-label::after{content:'';position:absolute;left:50%;bottom:-4px;transform:translateX(-50%) rotate(45deg);width:8px;height:8px;background:rgba(8,11,14,.88);border-right:1px solid var(--border-strong);border-bottom:1px solid var(--border-strong)}
 .cdn-note{font-family:'IBM Plex Mono',monospace;font-size:.64rem;letter-spacing:.03em;color:var(--text-muted);border:1px solid var(--border);border-left:2px solid #ff9f43;background:rgba(255,159,67,.05);padding:10px 12px;margin-bottom:16px;line-height:1.5}
 .cdn-note b{color:#ff9f43;font-weight:600;letter-spacing:.08em;text-transform:uppercase}
+/* ---- IP results grid ---- */
+.ip-report{border:1px solid var(--border);background:rgba(255,255,255,.01);overflow:hidden}
+.ip-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr))}
+.ip-cell{padding:16px 18px;border-right:1px solid var(--border-soft);border-bottom:1px solid var(--border-soft);background:linear-gradient(180deg,rgba(255,255,255,.025),transparent);transition:background .2s}
+.ip-cell:hover{background:rgba(255,255,255,.04)}
+.ip-cell:nth-child(n+7){border-bottom:none}
+.ip-cell:last-child{border-right:none}
+.ip-cell-label{font-family:'IBM Plex Mono',monospace;font-size:.58rem;letter-spacing:.14em;color:var(--text-faint);text-transform:uppercase;margin-bottom:8px;display:flex;align-items:center;gap:6px}
+.ip-cell-label .ic{width:10px;height:10px;opacity:.7;flex-shrink:0}
+.ip-cell-val{font-family:'IBM Plex Mono',monospace;font-size:.84rem;color:#fff;word-break:break-all;letter-spacing:.01em;line-height:1.4}
+.ip-cell-val.big{font-family:'Inter',sans-serif;font-weight:700;font-size:1.05rem;letter-spacing:-.02em}
+.ip-cell-val.dim{color:var(--text-muted)}
+.ip-cell-val.mono-break{word-break:break-all}
+.badge-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:2px}
+.badge{display:inline-flex;align-items:center;gap:5px;font-family:'IBM Plex Mono',monospace;font-size:.58rem;letter-spacing:.1em;text-transform:uppercase;padding:4px 8px;border-radius:3px;border:1px solid var(--border-strong);color:var(--text-muted);background:rgba(255,255,255,.02)}
+.badge.hosting{color:#7ee787;border-color:rgba(126,231,135,.35);background:rgba(126,231,135,.06)}
+.badge.proxy{color:#ffa657;border-color:rgba(255,166,87,.35);background:rgba(255,166,87,.06)}
+.badge.mobile{color:#79c0ff;border-color:rgba(121,192,255,.35);background:rgba(121,192,255,.06)}
+.badge.cdn{color:#ff9f43;border-color:rgba(255,159,67,.35);background:rgba(255,159,67,.07)}
+.flag-chip{display:inline-flex;align-items:center;gap:6px;font-family:'IBM Plex Mono',monospace;font-size:.8rem;color:#fff;font-weight:600;letter-spacing:.02em}
+.map-overlay{position:absolute;left:14px;bottom:14px;display:flex;gap:8px;flex-wrap:wrap;pointer-events:none;z-index:2}
+.map-chip{font-family:'IBM Plex Mono',monospace;font-size:.58rem;letter-spacing:.1em;text-transform:uppercase;color:var(--text-muted);background:rgba(8,11,14,.82);border:1px solid var(--border-strong);padding:5px 9px;border-radius:3px;backdrop-filter:blur(3px)}
+.map-chip b{color:#fff;font-weight:600;letter-spacing:.06em}
+.map-card::after{content:'';position:absolute;inset:0;pointer-events:none;background:radial-gradient(ellipse at 50% 100%,transparent 40%,rgba(5,5,5,.6))}
 @media (prefers-reduced-motion:reduce){.pin-pulse{animation:none;opacity:.2}}
 </style>
 </head>
@@ -618,6 +642,10 @@ footer.footer{position:fixed;bottom:0;left:0;right:0;height:48px;display:flex;al
             <div class="stat-num" id="ipType">—</div>
             <div class="stat-label">Type</div>
           </div>
+          <div class="stat-item">
+            <div class="stat-num" id="ipCountry">—</div>
+            <div class="stat-label">Country</div>
+          </div>
         </div>
       </div>
 
@@ -629,6 +657,7 @@ footer.footer{position:fixed;bottom:0;left:0;right:0;height:48px;display:flex;al
           <span class="pin-dot"></span>
           <span class="pin-label" id="ipPinLabel"></span>
         </div>
+        <div class="map-overlay" id="ipMapOverlay"></div>
         <div class="map-empty" id="ipMapEmpty">// no geolocation coordinates for this target</div>
       </div>
 
@@ -638,11 +667,8 @@ footer.footer{position:fixed;bottom:0;left:0;right:0;height:48px;display:flex;al
         <div class="results-count" id="ipResultsCount"></div>
       </div>
       <div class="cdn-note" id="ipCdnNote" style="display:none;"></div>
-      <div class="table-wrap">
-        <div class="table-head" style="grid-template-columns:160px 1fr;min-width:420px;">
-          <div>Field</div><div>Value</div>
-        </div>
-        <div id="ipTableBody"></div>
+      <div class="ip-report">
+        <div class="ip-grid" id="ipGridBody"></div>
       </div>
       <div class="actions">
         <button class="btn" id="ipBtnCopy" type="button">&#x2398; <span id="ipLblCopy">Copy</span></button>

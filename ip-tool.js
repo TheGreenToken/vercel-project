@@ -24,11 +24,13 @@
   const ipValue = $('ipValue');
   const ipType = $('ipType');
   const resultsCount = $('ipResultsCount');
-  const tableBody = $('ipTableBody');
+  const ipGridBody = $('ipGridBody');
   const mapPin = $('ipMapPin');
   const mapEmpty = $('ipMapEmpty');
+  const mapOverlay = $('ipMapOverlay');
   const pinLabel = $('ipPinLabel');
   const cdnNote = $('ipCdnNote');
+  const ipCountry = $('ipCountry');
 
   // Equirectangular projection (viewBox 1000x500): map lat/lon to %.
   function project(lat, lon) {
@@ -69,36 +71,65 @@
     return '';
   }
 
-  function buildRows(d) {
+  // Small inline icon per field label (keeps it monochrome, on-theme).
+  const IP_ICONS = {
+    'IP Address': '&#9679;',
+    'All IPs': '&#9679;',
+    'CDN / Edge': '&#9675;',
+    'Type': '&#9670;',
+    'Country': '&#9680;',
+    'Region': '&#9680;',
+    'City': '&#9678;',
+    'Coordinates': '&#9681;',
+    'Timezone': '&#9681;',
+    'ISP': '&#9677;',
+    'Organization': '&#9677;',
+    'ASN': '&#9679;',
+    'AS Name': '&#9679;',
+    'Reverse DNS': '&#9673;',
+  };
+  function iconFor(k) { return IP_ICONS[k] ? '<span class="ic">' + IP_ICONS[k] + '</span>' : ''; }
+
+  // Returns array of cell objects: { label, value, cls, big }
+  function buildCells(d) {
     const g = d.geo || {};
-    const rows = [];
-    rows.push(['IP Address', d.ip || '—']);
+    const cells = [];
+    const push = (label, value, cls, big) => cells.push({ label, value, cls: cls || '', big: !!big });
+
+    push('IP Address', d.ip || '—', 'big', true);
     const allIps = Array.isArray(d.allIps) ? d.allIps : (d.ip ? [d.ip] : []);
     if (allIps.length > 1) {
-      rows.push(['All IPs', allIps.length + ' · ' + allIps.slice(0, 4).join(', ') + (allIps.length > 4 ? '…' : '')]);
+      push('All IPs', allIps.length + ' resolved · ' + allIps.slice(0, 3).join(', ') + (allIps.length > 3 ? '…' : ''), 'dim mono-break');
     }
-    if (d.cdn) rows.push(['CDN / Edge', d.cdn.cdn + ' (AS' + d.cdn.asn + ')']);
-    rows.push(['Type', (d.type || '—').toUpperCase()]);
-    rows.push(['Country', [g.country, g.countryCode].filter(Boolean).join(' / ') || '—']);
-    rows.push(['Region', g.region || '—']);
-    rows.push(['City', [g.city, g.zip].filter(Boolean).join(', ') || '—']);
-    rows.push(['Coordinates', (g.lat != null && g.lon != null) ? g.lat + ', ' + g.lon : '—']);
-    rows.push(['Timezone', g.timezone || '—']);
-    rows.push(['ISP', g.isp || '—']);
-    rows.push(['Organization', g.org || '—']);
-    rows.push(['ASN', g.as || '—']);
-    if (g.asname) rows.push(['AS Name', g.asname]);
-    if (g.hosting) rows.push(['Hosting/Cloud', 'yes']);
-    if (g.proxy) rows.push(['Proxy/VPN', 'yes']);
-    if (g.mobile) rows.push(['Mobile', 'yes']);
+    if (d.cdn) push('CDN / Edge', d.cdn.cdn + ' · AS' + d.cdn.asn, 'dim');
+    push('Type', (d.type || '—').toUpperCase());
+    push('Country', [g.country, g.countryCode].filter(Boolean).join(' / ') || '—');
+    push('Region', g.region || '—');
+    push('City', [g.city, g.zip].filter(Boolean).join(', ') || '—');
+    push('Coordinates', (g.lat != null && g.lon != null) ? g.lat + ', ' + g.lon : '—');
+    push('Timezone', g.timezone || '—');
+    push('ISP', g.isp || '—');
+    push('Organization', g.org || '—');
+    push('ASN', g.as || '—');
+    if (g.asname) push('AS Name', g.asname, 'dim');
     const rev = Array.isArray(d.reverse) ? d.reverse.filter(Boolean) : [];
-    rows.push(['Reverse DNS', rev.length ? rev.join(', ') : '—']);
-    return rows;
+    push('Reverse DNS', rev.length ? rev.join(', ') : '—', 'mono-break');
+    return cells;
+  }
+
+  function buildBadges(d) {
+    const g = d.geo || {};
+    const out = [];
+    if (d.cdn) out.push('<span class="badge cdn">' + esc(d.cdn.cdn) + '</span>');
+    if (g.hosting) out.push('<span class="badge hosting">hosting</span>');
+    if (g.proxy) out.push('<span class="badge proxy">proxy/vpn</span>');
+    if (g.mobile) out.push('<span class="badge mobile">mobile</span>');
+    return out;
   }
 
   function renderResults() {
     const d = currentData;
-    if (!d) { tableBody.innerHTML = ''; resultsCount.textContent = ''; return; }
+    if (!d) { ipGridBody.innerHTML = ''; resultsCount.textContent = ''; return; }
     const g = d.geo || {};
     if (d.status === 'found' && g.lat != null && g.lon != null) {
       const p = project(g.lat, g.lon);
@@ -108,9 +139,14 @@
       pinLabel.textContent = san(label, 80);
       mapPin.classList.add('show');
       mapEmpty.style.display = 'none';
+      const ov = [];
+      ov.push('<div class="map-chip"><b>' + esc(g.lat) + ',' + esc(g.lon) + '</b></div>');
+      if (d.cdn) ov.push('<div class="map-chip">' + esc(d.cdn.cdn) + '</div>');
+      mapOverlay.innerHTML = ov.join('');
     } else {
       mapPin.classList.remove('show');
       mapEmpty.style.display = 'flex';
+      mapOverlay.innerHTML = '';
     }
     if (d.cdn) {
       cdnNote.style.display = 'block';
@@ -119,18 +155,26 @@
       cdnNote.style.display = 'none';
       cdnNote.innerHTML = '';
     }
-    const rows = buildRows(d);
-    tableBody.innerHTML = '';
-    rows.forEach(([k, v]) => {
-      const div = document.createElement('div');
-      div.className = 'ip-row';
-      div.innerHTML = `
-        <div class="ip-field" data-label="${esc(k)}" title="${esc(k)}">${esc(k)}</div>
-        <div class="ip-value" data-label="${esc(k)}" title="${esc(v)}">${esc(v)}</div>
+    const cells = buildCells(d);
+    ipGridBody.innerHTML = '';
+    cells.forEach(c => {
+      const cell = document.createElement('div');
+      cell.className = 'ip-cell';
+      cell.innerHTML = `
+        <div class="ip-cell-label">${iconFor(c.label)}${esc(c.label)}</div>
+        <div class="ip-cell-val ${c.cls}${c.big ? ' big' : ''}">${esc(c.value)}</div>
       `;
-      tableBody.appendChild(div);
+      ipGridBody.appendChild(cell);
     });
-    resultsCount.textContent = `${rows.length} fields`;
+    const badges = buildBadges(d);
+    if (badges.length) {
+      const bcell = document.createElement('div');
+      bcell.className = 'ip-cell';
+      bcell.style.gridColumn = '1/-1';
+      bcell.innerHTML = '<div class="ip-cell-label">' + iconFor('Type') + 'Flags</div><div class="badge-row">' + badges.join('') + '</div>';
+      ipGridBody.appendChild(bcell);
+    }
+    resultsCount.textContent = cells.length + ' fields';
   }
 
   async function runLookup() {
@@ -173,6 +217,7 @@
       target.textContent = san(query, 253);
       ipValue.textContent = data.ip || '—';
       ipType.textContent = (data.type || '—').toUpperCase();
+      ipCountry.textContent = (data.geo && data.geo.country) ? data.geo.country : '—';
       const g = data.geo || {};
       if (data.status === 'not_found') {
         meta.textContent = 'No DNS resolution found for this target.';
@@ -215,12 +260,12 @@
   }
   $('ipBtnCopy').addEventListener('click', () => {
     if (!currentData) return;
-    const lines = buildRows(currentData).map(r => `${r[0]}\t${r[1]}`);
+    const lines = buildCells(currentData).map(c => `${c.label}\t${c.value}`);
     copyText(lines.join('\n'), 'ipLblCopy');
   });
   $('ipBtnTxt').addEventListener('click', () => {
     if (!currentData) return;
-    const lines = [`Query: ${currentQuery}`, `IP: ${currentData.ip || '—'}`, `Status: ${currentData.status}`, '', ...buildRows(currentData).map(r => `${r[0]}\t${r[1]}`)];
+    const lines = [`Query: ${currentQuery}`, `IP: ${currentData.ip || '—'}`, `Status: ${currentData.status}`, '', ...buildCells(currentData).map(c => `${c.label}\t${c.value}`)];
     const blob = new Blob([lines.join('\n')], {type:'text/plain'});
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `mono-ip-${currentQuery.replace(/[^a-z0-9]/gi,'_')}.txt`; a.click(); URL.revokeObjectURL(a.href);
   });
