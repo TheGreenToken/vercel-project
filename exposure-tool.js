@@ -176,7 +176,8 @@
       setFilter('all');
       target.textContent = san(email, 254);
       foundCount.textContent = String(data.hitCount ?? currentHits.length);
-      totalCount.textContent = String(data.total ?? currentHits.length);
+      const totalVal = Number(data.total) > 0 ? data.total : (data.hitCount ?? currentHits.length);
+      totalCount.textContent = String(totalVal);
       const sources = [...new Set(currentHits.map(h => h.source).filter(Boolean))].slice(0, 4);
       if (data.status === 'not_found' || currentHits.length === 0) {
         meta.textContent = 'No publicly indexed stealer-log hits found for this address.';
