@@ -4,6 +4,7 @@ const crypto = require("crypto");
 const kv     = require("../lib/kv");
 const { getCorsHeaders } = require("../lib/middleware");
 const { listUsers, listLoginLogs, getDbStats, getDatabaseUrl, listScanLogs, getScanStats } = require("../lib/db");
+const { getAllLookups, clearAllLookups } = require("../lib/lookuplog");
 
 const CTRL_RE = /[^\x20-\x7E]/g;
 
@@ -165,6 +166,17 @@ module.exports = async function handler(req, res) {
   if (action === "activity_log") {
     const log = await kv.get("mono:admin:activity").catch(() => []);
     return res.status(200).json({ ok: true, log: Array.isArray(log) ? log : [] });
+  }
+
+  if (action === "lookup_log") {
+    const log = await getAllLookups();
+    return res.status(200).json({ ok: true, log: Array.isArray(log) ? log : [], count: (Array.isArray(log) ? log.length : 0) });
+  }
+
+  if (action === "clear_lookup_log") {
+    await clearAllLookups();
+    await addActivityLog("lookup_log_cleared", "Admin cleared the global lookup activity log");
+    return res.status(200).json({ ok: true, message: "Lookup activity log cleared" });
   }
 
   if (action === "user_lookup") {
