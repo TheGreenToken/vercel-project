@@ -150,6 +150,7 @@ module.exports = async function handler(req, res) {
       dbUsers:           dbStats.users || 0,
       dbLoginLogs:       dbStats.loginLogs || 0,
       dbScanLogs:        dbStats.scanLogs || 0,
+      dbLookupLogs:      dbStats.lookupLogs || 0,
       blacklist: [...blacklist].map(([id, reason]) => ({ id: esc(id), reason: esc(reason) })),
       special:   [...special].map(([id, envKey])   => ({ id: esc(id), envKey: esc(envKey) })),
       env: {
