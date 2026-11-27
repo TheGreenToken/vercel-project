@@ -65,7 +65,8 @@ async function handler(req, res) {
   if (limited) return json(res, 429, { error: "Rate limit reached. Wait a moment." });
 
   const started = Date.now();
-  const result = await searchStealthlogs(email, "email").catch(() => ({ ok: false, status: "error", detail: "Network request failed" }));
+  const maxPages = Math.min(Math.max(1, parseInt(body.maxPages, 10) || 5), 20);
+  const result = await searchStealthlogs(email, "email", { maxPages }).catch(() => ({ ok: false, status: "error", detail: "Network request failed" }));
   const durationMs = Date.now() - started;
 
   if (!result.ok) {
