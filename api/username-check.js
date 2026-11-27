@@ -11,6 +11,7 @@ const crypto = require("crypto");
 const kv = require("../lib/kv");
 const { kvRateLimit, getCorsHeaders } = require("../lib/middleware");
 const { verifySessionToken, isTokenBlacklisted } = require("../lib/session");
+const { appendLookup, makeEntry } = require("../lib/lookuplog");
 
 const USERNAME_RE = /^[a-zA-Z0-9._-]{1,64}$/;
 
@@ -173,6 +174,8 @@ async function handler(req, res) {
 
   const found = results.filter(r => r.status === "found");
   const durationMs = Date.now() - started;
+
+  await appendLookup(session.userId, makeEntry("username", username, found.length ? "found" : "none", durationMs)).catch(() => {});
 
   return json(res, 200, {
     username,

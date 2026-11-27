@@ -143,6 +143,7 @@
       log(`Done: ${data.status} · ${found.length} found in ${data.durationMs}ms`, found.length ? 'hit' : 'ok');
       renderResults();
       resultsBlock.classList.add('show');
+      try { window.dispatchEvent(new CustomEvent('mono:lookup-done', { detail: { tool: 'username', query: data.username, status: data.status } })); } catch (_) {}
     } catch (e) {
       showError(e.message || 'Username lookup failed', 'Check your connection and try again.');
       setProgress(100, 'Failed');

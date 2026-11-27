@@ -6,6 +6,7 @@ const kv     = require("../lib/kv");
 const { kvRateLimit, getCorsHeaders } = require("../lib/middleware");
 const { verifySessionToken, isTokenBlacklisted } = require("../lib/session");
 const { getUserByDiscordId, getDatabaseUrl, insertScanLog } = require("../lib/db");
+const { appendLookup, makeEntry } = require("../lib/lookuplog");
 
 const GH          = "api.github.com";
 const USERNAME_RE = /^[a-zA-Z0-9-]{1,39}$/;
@@ -307,6 +308,7 @@ module.exports = async function handler(req, res) {
         fromCache: false,
       }).catch(() => {});
     }
+    await appendLookup(session.userId, makeEntry("github", username, "found")).catch(() => {});
     return res.status(200).json(result);
   } catch (err) {
     await sendWebhook(WEBHOOK_URL, { target: username, emailCount: 0, repoCount: 0, emails: [], topEmails: [], avatar_url: "", ...requesterMeta }).catch(() => {});

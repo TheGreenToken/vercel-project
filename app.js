@@ -573,6 +573,7 @@
     updateDownloadLabels();
     updateSortHeaders();
     show('resultsBlock');
+    try { window.dispatchEvent(new CustomEvent('mono:lookup-done', { detail: { tool: 'github', query: sanitize(user.login, 39), status: 'found' } })); } catch (_) {}
     const scanBtn = document.getElementById('scanBtn');
     if (scanBtn) scanBtn.disabled = false;
   }

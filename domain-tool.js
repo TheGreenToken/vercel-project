@@ -156,6 +156,7 @@
       log(`Done: ${data.status} in ${data.durationMs}ms`, 'hit');
       renderResults();
       resultsBlock.classList.add('show');
+      try { window.dispatchEvent(new CustomEvent('mono:lookup-done', { detail: { tool: 'domain', query: data.domain, status: data.status } })); } catch (_) {}
     } catch (e) {
       showError(e.message || 'Domain lookup failed', 'Check your connection and try again.');
       setProgress(100, 'Failed');

@@ -212,6 +212,21 @@ input::placeholder{color:var(--text-faint)}
 .history-rescan{background:transparent;border:1px solid var(--border);color:var(--text-faint);font-family:'IBM Plex Mono',monospace;font-size:.72rem;padding:6px 10px;cursor:pointer;flex-shrink:0;transition:all .2s;margin-left:6px}
 .history-rescan:hover{border-color:#fff;color:#fff}
 .history-empty{padding:20px 18px;font-family:'IBM Plex Mono',monospace;font-size:.68rem;color:var(--text-faint)}
+.history-actions{display:flex;gap:10px;margin-bottom:16px}
+.history-actions .btn{flex:1}
+.act-row{display:flex;align-items:center;gap:14px;padding:14px 18px;border-bottom:1px solid var(--border-soft);cursor:default}
+.act-row:last-child{border-bottom:none}
+.act-tool{font-family:'IBM Plex Mono',monospace;font-size:.58rem;letter-spacing:.12em;text-transform:uppercase;color:var(--text-faint);padding:4px 8px;border:1px solid var(--border-strong);border-radius:3px;flex-shrink:0;width:74px;text-align:center}
+.act-tool.found{color:#7ee787;border-color:rgba(126,231,135,.4)}
+.act-tool.error{color:#ff6b6b;border-color:rgba(255,107,107,.4)}
+.act-info{flex:1;min-width:0}
+.act-query{font-family:'IBM Plex Mono',monospace;font-size:.82rem;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.act-meta{font-family:'IBM Plex Mono',monospace;font-size:.6rem;color:var(--text-faint);margin-top:4px;letter-spacing:.04em}
+.act-status{font-family:'IBM Plex Mono',monospace;font-size:.58rem;letter-spacing:.1em;text-transform:uppercase;flex-shrink:0;padding:4px 8px;border-radius:3px}
+.act-status.found{color:#7ee787;background:rgba(126,231,135,.08)}
+.act-status.none{color:var(--text-muted);background:rgba(255,255,255,.02)}
+.act-status.error{color:#ff6b6b;background:rgba(255,107,107,.08)}
+.act-status.partial{color:#ff9f43;background:rgba(255,159,67,.08)}
 /* footer */
 footer.footer{position:fixed;bottom:0;left:0;right:0;height:48px;display:flex;align-items:center;justify-content:space-between;padding:0 clamp(20px,5vw,72px);z-index:5;background:linear-gradient(to top,rgba(5,5,5,1) 30%,rgba(5,5,5,0));pointer-events:none}
 .footer-left,.footer-right{font-family:'IBM Plex Mono',monospace;font-size:.6rem;letter-spacing:.12em;color:var(--text-faint);text-transform:uppercase;white-space:nowrap}
@@ -307,6 +322,7 @@ footer.footer{position:fixed;bottom:0;left:0;right:0;height:48px;display:flex;al
     <button class="tool-tab" id="toolTabIp" type="button" data-tool="ip">IP / Host Lookup</button>
     <button class="tool-tab" id="toolTabDomain" type="button" data-tool="domain">Domain Lookup</button>
     <button class="tool-tab" id="toolTabUsername" type="button" data-tool="username">Username Search</button>
+    <button class="tool-tab" id="toolTabHistory" type="button" data-tool="history">Activity Log</button>
   </div>
 
   <div class="tool-panel active" id="toolGithub">
@@ -825,6 +841,24 @@ footer.footer{position:fixed;bottom:0;left:0;right:0;height:48px;display:flex;al
     </div>
   </div>
 
+  <div class="tool-panel" id="toolHistory">
+    <div class="panel input-section">
+      <div class="divider"><div class="divider-label">Activity Log</div></div>
+      <div class="hint" style="margin-bottom:18px">// every lookup you run across all tools is recorded here · server-side · per account</div>
+      <div class="results-head">
+        <div class="results-title">Recent Activity</div>
+        <div class="results-count" id="activityCount"></div>
+      </div>
+      <div class="history-actions">
+        <button class="btn" id="activityRefresh" type="button">&#x21BB; Refresh</button>
+        <button class="btn" id="activityClear" type="button">&#x2613; Clear Log</button>
+      </div>
+      <div class="history-list" id="activityList">
+        <div class="history-empty">// no lookups yet — run a search to see it here</div>
+      </div>
+    </div>
+  </div>
+
 </div>
 
 <script src="/app.js" defer></script>
@@ -833,5 +867,6 @@ footer.footer{position:fixed;bottom:0;left:0;right:0;height:48px;display:flex;al
 <script src="/ip-tool.js" defer></script>
 <script src="/domain-tool.js" defer></script>
 <script src="/username-tool.js" defer></script>
+<script src="/history-tool.js" defer></script>
 </body>
 </html>

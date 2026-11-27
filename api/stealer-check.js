@@ -12,6 +12,7 @@
 const kv     = require("../lib/kv");
 const { kvRateLimit, getCorsHeaders } = require("../lib/middleware");
 const { verifySessionToken, isTokenBlacklisted } = require("../lib/session");
+const { appendLookup, makeEntry } = require("../lib/lookuplog");
 
 const EMAIL_RE = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/;
 const SEARCH_BASE = "https://stealerlogs.com/search";
@@ -313,10 +314,12 @@ async function handler(req, res) {
   const durationMs = Date.now() - started;
 
   if (!result.ok) {
+    await appendLookup(session.userId, makeEntry("exposure", email, "error", durationMs)).catch(() => {});
     return json(res, 502, { email, status: result.status, detail: result.detail, hits: [], total: 0, durationMs });
   }
 
   const hits = result.parsed.hits;
+  await appendLookup(session.userId, makeEntry("exposure", email, result.status, durationMs)).catch(() => {});
   return json(res, 200, {
     email,
     status: result.status,
