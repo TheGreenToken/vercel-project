@@ -157,6 +157,20 @@ tr:last-child td{border-bottom:none}
 
     <div class="section">
       <div class="section-head">
+        <div class="section-title">Lookup Activity (all tools)</div>
+        <div class="section-actions">
+          <button class="btn sm" id="lookupLogRefreshBtn" type="button">Refresh</button>
+          <button class="btn sm" id="lookupLogClearBtn" type="button">Clear Log</button>
+        </div>
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Time</th><th>Tool</th><th>User</th><th>Query</th><th>Status</th><th>Duration</th></tr></thead>
+        <tbody id="lookupLogBody"><tr><td colspan="6" class="empty">// loading...</td></tr></tbody>
+      </table></div>
+    </div>
+
+    <div class="section">
+      <div class="section-head">
         <div class="section-title">Scan Logs (Neon DB)</div>
         <div class="section-actions">
           <input id="scanLogSearch" class="search-input" placeholder="Search target/requester/ip..." />
@@ -718,6 +732,33 @@ tr:last-child td{border-bottom:none}
     }
   }
 
+  const TOOL_LABEL = { github:'GitHub', email:'Email', exposure:'Exposure', ip:'IP', domain:'Domain', username:'Username' };
+
+  async function loadLookupLog() {
+    const tbody = document.getElementById('lookupLogBody');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="6" class="empty">// loading...</td></tr>';
+    const data = await api('lookup_log');
+    if (!data.ok) {
+      tbody.innerHTML = '<tr><td colspan="6" class="empty">// ' + esc(data.error || 'failed') + '</td></tr>';
+      return;
+    }
+    const log = Array.isArray(data.log) ? data.log : [];
+    if (!log.length) { tbody.innerHTML = '<tr><td colspan="6" class="empty">// no lookups recorded yet</td></tr>'; return; }
+    tbody.innerHTML = '';
+    log.forEach(e => {
+      const tr = document.createElement('tr');
+      const when = e.at ? new Date(e.at).toLocaleString() : '—';
+      const tool = TOOL_LABEL[e.tool] || e.tool || '—';
+      const user = e.userId ? '<span class="id">' + esc(san(e.userId, 20)) + '</span>' : '<span class="id">—</span>';
+      const query = esc(san(e.query, 80));
+      const status = esc(san(e.status, 16));
+      const dur = (e.durationMs != null) ? e.durationMs + 'ms' : '—';
+      tr.innerHTML = '<td class="id">' + esc(when) + '</td><td>' + esc(tool) + '</td><td>' + user + '</td><td style="white-space:normal;word-break:break-word">' + query + '</td><td>' + status + '</td><td>' + esc(dur) + '</td>';
+      tbody.appendChild(tr);
+    });
+  }
+
   function loadAll() {
     loadStats().catch(()=>{});
     loadScans().catch(()=>{});
@@ -727,6 +768,7 @@ tr:last-child td{border-bottom:none}
     loadScanStats().catch(()=>{});
     loadScanLogs().catch(()=>{});
     loadKvBlacklist().catch(()=>{});
+    loadLookupLog().catch(()=>{});
   }
 
   document.getElementById('loginBtn').addEventListener('click', doLogin);
@@ -738,6 +780,13 @@ tr:last-child td{border-bottom:none}
   document.getElementById('dbUserSearch')?.addEventListener('keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); loadDbUsers(); } });
   document.getElementById('scanStatsRefreshBtn')?.addEventListener('click', function(){ loadScanStats(); showToast('Scan stats refreshed'); });
   document.getElementById('scanLogsRefreshBtn')?.addEventListener('click', function(){ loadScanLogs(); showToast('Scan logs refreshed'); });
+  document.getElementById('lookupLogRefreshBtn')?.addEventListener('click', function(){ loadLookupLog(); showToast('Lookup activity refreshed'); });
+  document.getElementById('lookupLogClearBtn')?.addEventListener('click', async function () {
+    if (!confirm('Clear the global lookup activity log?')) return;
+    const res = await api('clear_lookup_log');
+    showToast(res.message || res.error || 'Done');
+    await loadLookupLog();
+  });
   document.getElementById('scanLogSearch')?.addEventListener('keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); loadScanLogs(); } });
   document.getElementById('lookupBtn')?.addEventListener('click', lookupUser);
   document.getElementById('lookupUserId')?.addEventListener('keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); lookupUser(); } });
