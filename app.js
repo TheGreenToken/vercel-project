@@ -89,7 +89,7 @@
       if (rescanBtn) {
         rescanBtn.addEventListener('click', function (evt) {
           evt.stopPropagation();
-          const input = document.getElementById('usernameInput');
+          const input = document.getElementById('githubInput');
           if (input) input.value = e.login;
           forcedRescan = true;
           document.getElementById('scanBtn')?.click();
@@ -273,7 +273,7 @@
     if (lb) lb.innerHTML = '';
     if (tb) tb.innerHTML = '';
     updateProgress(0);
-    const input = document.getElementById('usernameInput');
+    const input = document.getElementById('githubInput');
     if (input) input.value = '';
     const scanBtn = document.getElementById('scanBtn');
     if (scanBtn) scanBtn.disabled = false;
@@ -424,7 +424,7 @@
       return;
     }
 
-    const inputEl  = document.getElementById('usernameInput');
+    const inputEl  = document.getElementById('githubInput');
     const rawInput = inputEl ? inputEl.value.trim() : '';
     const username = sanitizeUsername(rawInput);
 
@@ -684,7 +684,7 @@
     document.getElementById('logoutBtn')?.addEventListener('click', doLogout);
     document.getElementById('scanBtn')?.addEventListener('click', doScan);
 
-    const usernameInput = document.getElementById('usernameInput');
+    const usernameInput = document.getElementById('githubInput');
     if (usernameInput) {
       usernameInput.addEventListener('keydown', e => { if (e.key === 'Enter') doScan(); });
       usernameInput.addEventListener('input', function () {
