@@ -99,6 +99,8 @@ input::placeholder{color:var(--text-faint)}
 .pages-sel{background:var(--bg-subtle);color:var(--text-muted);border:1px solid var(--border);font-family:'IBM Plex Mono',monospace;font-size:.66rem;letter-spacing:.06em;padding:0 12px;min-height:60px;cursor:pointer;appearance:none;-webkit-appearance:none;background-image:linear-gradient(45deg,transparent 50%,var(--text-faint) 50%),linear-gradient(135deg,var(--text-faint) 50%,transparent 50%);background-position:calc(100% - 16px) 27px,calc(100% - 11px) 27px;background-size:5px 5px,5px 5px;background-repeat:no-repeat;outline:none}
 .pages-sel:focus{border-color:var(--text-muted)}
 .pages-sel option{background:#0a0a0a;color:var(--text)}
+.load-more-btn{background:transparent;color:var(--text-muted);border:1px solid var(--border);font-family:'IBM Plex Mono',monospace;font-size:.66rem;letter-spacing:.1em;text-transform:uppercase;padding:10px 22px;min-height:40px;cursor:pointer;transition:all .25s var(--ease-out);border-radius:2px}
+.load-more-btn:hover{border-color:var(--text-muted);color:var(--text);background:rgba(255,255,255,.03)}
 .hint{font-family:'IBM Plex Mono',monospace;font-size:.64rem;color:var(--text-faint);margin-top:14px;letter-spacing:.04em}
 /* progress */
 .progress-block{display:none;margin-top:28px;padding:24px;border:1px solid var(--border);background:rgba(255,255,255,.015);animation:fadeIn .3s ease both}
@@ -604,6 +606,9 @@ footer.footer{position:fixed;bottom:0;left:0;right:0;height:48px;display:flex;al
         </div>
         <div id="exposureTableBody"></div>
       </div>
+      <div class="actions" style="justify-content:center;margin:14px 0;">
+        <button class="btn load-more-btn" id="exposureBtnMore" type="button" style="display:none;">Load more</button>
+      </div>
       <div class="actions">
         <button class="btn red-btn" id="exposureBtnCopy" type="button">&#x2398; <span id="exposureLblCopy">Copy Hits</span></button>
         <button class="btn" id="exposureBtnTxt" type="button">&#x2913; <span id="exposureLblTxt">Download TXT</span></button>
@@ -697,6 +702,9 @@ footer.footer{position:fixed;bottom:0;left:0;right:0;height:48px;display:flex;al
           <div>Origin</div><div>Login</div><div>Password</div><div>Posted</div><div>Source</div>
         </div>
         <div id="ipExposureTableBody"></div>
+      </div>
+      <div class="actions" style="justify-content:center;margin:14px 0;">
+        <button class="btn load-more-btn" id="ipExposureBtnMore" type="button" style="display:none;">Load more</button>
       </div>
       <div class="actions">
         <button class="btn red-btn" id="ipExposureBtnCopy" type="button">&#x2398; <span id="ipExposureLblCopy">Copy Hits</span></button>
