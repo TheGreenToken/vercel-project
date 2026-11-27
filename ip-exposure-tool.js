@@ -8,7 +8,7 @@
 
   const input = $('ipExposureInput');
   const scanBtn = $('ipExposureScanBtn');
-  const pagesSel = $('ipExposurePages');
+  const pagesBar = $('ipExposurePagesBar') || document.querySelector('#toolIpExposure .pages-bar');
   const progressBlock = $('ipExposureProgressBlock');
   const statusText = $('ipExposureStatusText');
   const pctText = $('ipExposurePctText');
@@ -50,6 +50,18 @@
     logBlock.appendChild(d);
     logBlock.scrollTop = logBlock.scrollHeight;
   }
+
+  function selectedPages() {
+    if (!pagesBar) return 5;
+    const active = pagesBar.querySelector('.pages-btn.active');
+    return Math.min(Math.max(1, parseInt(active ? active.dataset.pages : '5', 10) || 5), 20);
+  }
+  pagesBar && pagesBar.addEventListener('click', (e) => {
+    const btn = e.target.closest('.pages-btn');
+    if (!btn) return;
+    pagesBar.querySelectorAll('.pages-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+  });
 
   function validateIp(v) {
     const s = String(v || '').trim().slice(0, 64);
@@ -140,7 +152,7 @@
       let fake = 30;
       const timer = setInterval(() => { fake = Math.min(80, fake + 2); setProgress(fake, 'Looking up hits...'); }, 700);
       let res, text;
-      const pages = Math.min(Math.max(1, parseInt(pagesSel.value, 10) || 5), 20);
+      const pages = selectedPages();
       try {
         res = await fetch('/api/ip-exposure', {
           method: 'POST',

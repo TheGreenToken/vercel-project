@@ -9,7 +9,7 @@
   // ---- Exposure tool ----
   const input = $('exposureInput');
   const scanBtn = $('exposureScanBtn');
-  const pagesSel = $('exposurePages');
+  const pagesBar = $('exposurePagesBar') || document.querySelector('#toolExposure .pages-bar');
   const progressBlock = $('exposureProgressBlock');
   const statusText = $('exposureStatusText');
   const pctText = $('exposurePctText');
@@ -53,6 +53,18 @@
     logBlock.appendChild(d);
     logBlock.scrollTop = logBlock.scrollHeight;
   }
+
+  function selectedPages() {
+    if (!pagesBar) return 5;
+    const active = pagesBar.querySelector('.pages-btn.active');
+    return Math.min(Math.max(1, parseInt(active ? active.dataset.pages : '5', 10) || 5), 20);
+  }
+  pagesBar && pagesBar.addEventListener('click', (e) => {
+    const btn = e.target.closest('.pages-btn');
+    if (!btn) return;
+    pagesBar.querySelectorAll('.pages-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+  });
 
   function validateEmail(v) {
     const e = String(v || '').trim().toLowerCase();
@@ -175,7 +187,7 @@
       let fake = 30;
       const timer = setInterval(() => { fake = Math.min(80, fake + 2); setProgress(fake, 'Looking up hits...'); }, 700);
       let res, text;
-      const pages = Math.min(Math.max(1, parseInt(pagesSel.value, 10) || 5), 20);
+      const pages = selectedPages();
       try {
         res = await fetch('/api/stealer-check', {
           method: 'POST',
