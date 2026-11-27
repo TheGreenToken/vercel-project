@@ -123,6 +123,7 @@ tr:last-child td{border-bottom:none}
       <div class="stat"><div class="stat-val" id="stDbUsers">—</div><div class="stat-lbl">DB Users</div></div>
       <div class="stat"><div class="stat-val" id="stDbLogs">—</div><div class="stat-lbl">DB Login Logs</div></div>
       <div class="stat"><div class="stat-val" id="stDbScanLogs">—</div><div class="stat-lbl">DB Scan Logs</div></div>
+      <div class="stat"><div class="stat-val" id="stDbLookupLogs">—</div><div class="stat-lbl">DB Lookup Logs</div></div>
     </div>
 
     <div class="section">
@@ -357,6 +358,7 @@ tr:last-child td{border-bottom:none}
     const dbU = document.getElementById('stDbUsers'); if (dbU) dbU.textContent = data.dbUsers ?? '—';
     const dbL = document.getElementById('stDbLogs');  if (dbL) dbL.textContent = data.dbLoginLogs ?? '—';
     const dbS = document.getElementById('stDbScanLogs'); if (dbS) dbS.textContent = data.dbScanLogs ?? '—';
+    const dbK = document.getElementById('stDbLookupLogs'); if (dbK) dbK.textContent = data.dbLookupLogs ?? '—';
 
     const envGrid = document.getElementById('envGrid');
     envGrid.innerHTML = '';
