@@ -29,6 +29,7 @@
   let currentHits = [];
   let currentFilter = 'all';
   let currentIp = '';
+  let renderedCount = 25;
 
   function showError(msg, hint) {
     errorMsg.textContent = san(msg, 200);
@@ -64,11 +65,13 @@
   }
 
   function renderResults() {
-    const rows = filteredHits();
+    const all = filteredHits();
+    const rows = all.slice(0, renderedCount);
     tableBody.innerHTML = '';
     if (!rows.length) {
       tableBody.innerHTML = '<div class="table-empty">// no hits for this filter</div>';
       resultsCount.textContent = '0 shown';
+      updateMoreBtn(all.length);
       return;
     }
     rows.forEach(h => {
@@ -83,7 +86,25 @@
       `;
       tableBody.appendChild(div);
     });
-    resultsCount.textContent = `${rows.length} shown · ${currentHits.length} hits`;
+    resultsCount.textContent = `${rows.length} shown · ${all.length} hits`;
+    updateMoreBtn(all.length);
+  }
+
+  function updateMoreBtn(total) {
+    const btn = $('ipExposureBtnMore');
+    if (!btn) return;
+    if (total > renderedCount) {
+      btn.style.display = '';
+      btn.textContent = `Load 25 more (${total - renderedCount} left)`;
+    } else {
+      btn.style.display = 'none';
+      btn.textContent = 'Load more';
+    }
+  }
+
+  function loadMore() {
+    renderedCount += 25;
+    renderResults();
   }
 
   function setFilter(f) {
@@ -100,6 +121,7 @@
   $('ipExposureFilterAll').addEventListener('click', () => setFilter('all'));
   $('ipExposureFilterOrigin').addEventListener('click', () => setFilter('origin'));
   $('ipExposureFilterSource').addEventListener('click', () => setFilter('source'));
+  $('ipExposureBtnMore').addEventListener('click', loadMore);
 
   async function runSearch() {
     clearError();
@@ -139,6 +161,7 @@
         return;
       }
       currentHits = Array.isArray(data.hits) ? data.hits : [];
+      renderedCount = 25;
       currentFilter = 'all';
       setFilter('all');
       target.textContent = san(ip, 64);
