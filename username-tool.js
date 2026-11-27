@@ -100,7 +100,7 @@
   async function runLookup() {
     clearError();
     const username = validateUsername(input.value);
-    if (!username) { showError('Enter a valid username.', 'Example: octocat'); return; }
+    if (!username) { showError('Enter a valid username.', 'Use letters, numbers, dots, dashes or underscores — no spaces.'); return; }
     currentQuery = username;
     scanBtn.disabled = true;
     progressBlock.classList.add('show');
