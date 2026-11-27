@@ -249,6 +249,22 @@ footer.footer{position:fixed;bottom:0;left:0;right:0;height:48px;display:flex;al
 @media (max-width:900px){.actions{grid-template-columns:repeat(3,1fr)}.profile-strip{grid-template-columns:auto 1fr}.profile-stats{grid-column:1/-1;justify-content:flex-start}.stat-item{text-align:left;padding-left:0;border-left:none;padding-right:28px;border-right:1px solid var(--border)}.stat-item:last-child{border-right:none}}
 @media (max-width:640px){.auth-bar{margin-bottom:32px}.brand-mark span{display:none}.input-row{flex-wrap:wrap}.input-at{padding:14px 16px}input[type="text"]{flex-basis:calc(100% - 54px);padding:14px 16px}.btn-scan{flex-basis:100%;border-left:none;border-top:1px solid #fff;padding:16px 20px;text-align:center;min-height:54px}.table-head,.row{grid-template-columns:1fr 60px;min-width:unset}.table-head>*:nth-child(2),.table-head>*:nth-child(3),.row>*:nth-child(2),.row>*:nth-child(3){display:none}.actions{grid-template-columns:repeat(2,1fr)}.profile-strip{padding:20px;gap:16px}.profile-avatar{width:56px;height:56px}.profile-stats{gap:20px}.stat-item{padding-right:20px}footer.footer{padding:0 20px}.footer-left{display:none}}
 @media (max-width:380px){.actions{grid-template-columns:1fr}.profile-stats{display:none}.hero-meta{display:none}}
+/* mobile: no overlaps */
+@media (max-width:640px){
+  .auth-bar{flex-wrap:wrap;row-gap:10px}
+  .auth-right{width:100%;justify-content:flex-end;margin-left:0}
+  .input-row-top{row-gap:8px}
+  .pages-sel{flex-basis:100%;margin-top:8px;min-height:48px;background-position:calc(100% - 16px) 21px,calc(100% - 11px) 21px}
+  .map-card{aspect-ratio:3/2}
+  .pin-label{font-size:.55rem;padding:3px 7px;max-width:62vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .map-overlay{left:8px;bottom:8px;max-width:calc(100% - 16px)}
+  .act-row{flex-wrap:wrap;row-gap:6px}
+  .act-status{margin-left:auto}
+  .ip-cell{padding:14px 16px}
+  .ip-grid{grid-template-columns:1fr}
+  .profile-strip{padding:20px;gap:16px}
+  .progress-head{flex-wrap:wrap;row-gap:6px}
+}
 @media (hover:none) and (pointer:coarse){.btn-scan,.btn,.auth-login-btn,.auth-logout-btn,.depth-btn,.filter-btn,.history-rescan{cursor:pointer}}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
 /* ---- IP map ---- */
