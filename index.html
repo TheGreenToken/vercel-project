@@ -99,10 +99,7 @@ input::placeholder{color:var(--text-faint)}
 .btn-scan:disabled{opacity:.3;cursor:not-allowed;transform:none}
 .btn-scan:disabled:hover{background:#fff;color:#000}
 .btn-scan:disabled::before{display:none}
-.pages-bar{display:flex;gap:6px;flex-wrap:wrap;flex-shrink:0}
-.pages-btn{font-family:'IBM Plex Mono',monospace;font-size:.62rem;letter-spacing:.08em;text-transform:uppercase;padding:10px 14px;background:transparent;border:1px solid var(--border);color:var(--text-faint);cursor:pointer;transition:all .2s var(--ease-out);min-height:var(--touch-min);white-space:nowrap;flex:1;text-align:center}
-.pages-btn:hover{border-color:var(--text-muted);color:var(--text-muted)}
-.pages-btn.active{border-color:#fff;color:#000;background:#fff;font-weight:600}
+
 .load-more-btn{background:transparent;color:var(--text-muted);border:1px solid var(--border);font-family:'IBM Plex Mono',monospace;font-size:.66rem;letter-spacing:.1em;text-transform:uppercase;padding:10px 22px;min-height:40px;cursor:pointer;transition:all .25s var(--ease-out);border-radius:2px}
 .load-more-btn:hover{border-color:var(--text-muted);color:var(--text);background:rgba(255,255,255,.03)}
 .hint{font-family:'IBM Plex Mono',monospace;font-size:.64rem;color:var(--text-faint);margin-top:14px;letter-spacing:.04em}
@@ -255,8 +252,7 @@ footer.footer{position:fixed;bottom:0;left:0;right:0;height:48px;display:flex;al
   .auth-bar{flex-wrap:wrap;row-gap:10px}
   .auth-right{width:100%;justify-content:flex-end;margin-left:0}
   .input-row-top{row-gap:8px}
-  .pages-bar{width:100%;margin-top:8px}
-  .pages-btn{flex:1 1 auto}
+
   .map-card{aspect-ratio:3/2}
   .pin-label{font-size:.55rem;padding:3px 7px;max-width:62vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .map-overlay{left:8px;bottom:8px;max-width:calc(100% - 16px)}
@@ -562,13 +558,6 @@ footer.footer{position:fixed;bottom:0;left:0;right:0;height:48px;display:flex;al
         <input type="text" id="exposureInput" placeholder="target@example.com"
                autocomplete="off" spellcheck="false" autocapitalize="none"
                maxlength="254" />
-        <div class="pages-bar" id="exposurePagesBar" role="group" aria-label="Pages to fetch">
-          <button class="pages-btn" type="button" data-pages="1">1</button>
-          <button class="pages-btn" type="button" data-pages="3">3</button>
-          <button class="pages-btn active" type="button" data-pages="5">5</button>
-          <button class="pages-btn" type="button" data-pages="10">10</button>
-          <button class="pages-btn" type="button" data-pages="20">20</button>
-        </div>
         <button class="btn-scan" id="exposureScanBtn" type="button"><span>Search</span></button>
       </div>
       <div class="hint">// checks publicly indexed stealer-log hits</div>
@@ -659,13 +648,6 @@ footer.footer{position:fixed;bottom:0;left:0;right:0;height:48px;display:flex;al
         <input type="text" id="ipExposureInput" placeholder="8.8.8.8"
                autocomplete="off" spellcheck="false" autocapitalize="none"
                maxlength="64" />
-        <div class="pages-bar" id="ipExposurePagesBar" role="group" aria-label="Pages to fetch">
-          <button class="pages-btn" type="button" data-pages="1">1</button>
-          <button class="pages-btn" type="button" data-pages="3">3</button>
-          <button class="pages-btn active" type="button" data-pages="5">5</button>
-          <button class="pages-btn" type="button" data-pages="10">10</button>
-          <button class="pages-btn" type="button" data-pages="20">20</button>
-        </div>
         <button class="btn-scan" id="ipExposureScanBtn" type="button"><span>Search</span></button>
       </div>
       <div class="hint">// checks publicly indexed stealer-log hits for an IP</div>
