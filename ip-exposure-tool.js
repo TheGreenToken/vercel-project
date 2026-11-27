@@ -8,6 +8,7 @@
 
   const input = $('ipExposureInput');
   const scanBtn = $('ipExposureScanBtn');
+  const pagesSel = $('ipExposurePages');
   const progressBlock = $('ipExposureProgressBlock');
   const statusText = $('ipExposureStatusText');
   const pctText = $('ipExposurePctText');
@@ -117,11 +118,12 @@
       let fake = 30;
       const timer = setInterval(() => { fake = Math.min(80, fake + 2); setProgress(fake, 'Looking up hits...'); }, 700);
       let res, text;
+      const pages = Math.min(Math.max(1, parseInt(pagesSel.value, 10) || 5), 20);
       try {
         res = await fetch('/api/ip-exposure', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ip }),
+          body: JSON.stringify({ ip, maxPages: pages }),
         });
         text = await res.text();
       } finally { clearInterval(timer); }
@@ -147,7 +149,8 @@
       if (data.status === 'not_found' || currentHits.length === 0) {
         meta.textContent = 'No publicly indexed stealer-log hits found for this IP.';
       } else {
-        meta.textContent = `${currentHits.length} hit${currentHits.length>1?'s':''} found${sources.length ? ' · sources: ' + sources.join(', ') : ''}`;
+        const pg = Number(data.page) || 1;
+        meta.textContent = `${currentHits.length} hit${currentHits.length>1?'s':''} across ${pg} page${pg>1?'s':''}${sources.length ? ' · sources: ' + sources.join(', ') : ''}`;
       }
       setProgress(100, 'Complete');
       log(`Done: ${currentHits.length} hit(s) in ${data.durationMs}ms`, currentHits.length ? 'hit' : 'ok');
