@@ -13,7 +13,7 @@
 
   const TOOL_LABEL = {
     github: 'GitHub', email: 'Email', exposure: 'Exposure',
-    ip: 'IP', domain: 'Domain', username: 'Username',
+    ip: 'IP', ip_exposure: 'IP Exposure', domain: 'Domain', username: 'Username',
   };
 
   function fmtTime(iso) {

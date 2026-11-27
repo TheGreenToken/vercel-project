@@ -319,6 +319,7 @@ footer.footer{position:fixed;bottom:0;left:0;right:0;height:48px;display:flex;al
     <button class="tool-tab active" id="toolTabGithub" type="button" data-tool="github">GitHub Scanner</button>
     <button class="tool-tab" id="toolTabEmail" type="button" data-tool="email">Email Footprint</button>
     <button class="tool-tab" id="toolTabExposure" type="button" data-tool="exposure">Exposure Search</button>
+    <button class="tool-tab" id="toolTabIpExposure" type="button" data-tool="ipExposure">IP Exposure</button>
     <button class="tool-tab" id="toolTabIp" type="button" data-tool="ip">IP / Host Lookup</button>
     <button class="tool-tab" id="toolTabDomain" type="button" data-tool="domain">Domain Lookup</button>
     <button class="tool-tab" id="toolTabUsername" type="button" data-tool="username">Username Search</button>
@@ -608,6 +609,88 @@ footer.footer{position:fixed;bottom:0;left:0;right:0;height:48px;display:flex;al
     </div>
   </div>
 
+  <div class="tool-panel" id="toolIpExposure">
+    <div class="panel input-section">
+      <div class="divider"><div class="divider-label">IP Exposure</div></div>
+      <div class="input-row-top">
+        <div class="field-label">IP Address</div>
+        <div class="depth-bar">
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:.62rem;color:var(--text-faint);letter-spacing:.08em;text-transform:uppercase;">stealer-log exposure lookup · by IP</span>
+        </div>
+      </div>
+      <div class="input-row">
+        <div class="input-at">IP</div>
+        <input type="text" id="ipExposureInput" placeholder="8.8.8.8"
+               autocomplete="off" spellcheck="false" autocapitalize="none"
+               maxlength="64" />
+        <button class="btn-scan" id="ipExposureScanBtn" type="button"><span>Search</span></button>
+      </div>
+      <div class="hint">// checks publicly indexed stealer-log hits for an IP · partial credentials only · defensive OSINT</div>
+
+      <div class="progress-block" id="ipExposureProgressBlock">
+        <div class="progress-head">
+          <div class="progress-status" id="ipExposureStatusText">Initializing...</div>
+          <div class="progress-pct" id="ipExposurePctText">0%</div>
+        </div>
+        <div class="progress-bar"><div class="progress-fill" id="ipExposureProgressFill"></div></div>
+        <div class="progress-sub"><div class="progress-sub-fill" id="ipExposureSubFill"></div></div>
+        <div class="log-block" id="ipExposureLogBlock" aria-live="polite"></div>
+      </div>
+
+      <div class="error-block" id="ipExposureErrorBlock" role="alert">
+        <strong>// Error</strong>
+        <span id="ipExposureErrorMsg"></span>
+        <div id="ipExposureErrorHint" style="margin-top:8px;font-size:0.72rem;color:var(--text-muted);font-family:'IBM Plex Mono',monospace;"></div>
+      </div>
+    </div>
+
+    <div class="results-block" id="ipExposureResultsBlock">
+      <div class="profile-strip">
+        <div class="avatar-wrap">
+          <div class="profile-avatar" id="ipExposureAvatar" style="display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Mono',monospace;font-size:1.4rem;color:var(--text-muted);background:var(--bg-subtle);">IP</div>
+        </div>
+        <div class="profile-info">
+          <div class="profile-handle"><span id="ipExposureTarget"></span></div>
+          <div class="profile-meta" id="ipExposureMeta"></div>
+        </div>
+        <div class="profile-stats">
+          <div class="stat-item">
+            <div class="stat-num red" id="ipExposureFoundCount">&#8212;</div>
+            <div class="stat-label">Hits</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-num" id="ipExposureTotalCount">&#8212;</div>
+            <div class="stat-label">In Index</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="divider" style="margin-top:0;margin-bottom:16px"><div class="divider-label">Log Hits</div></div>
+      <div class="results-head">
+        <div class="results-title">IP Exposure Report</div>
+        <div class="results-count" id="ipExposureResultsCount"></div>
+      </div>
+      <div class="filter-bar">
+        <button class="filter-btn active" id="ipExposureFilterAll" type="button">All</button>
+        <button class="filter-btn" id="ipExposureFilterOrigin" type="button">Origin</button>
+        <button class="filter-btn" id="ipExposureFilterSource" type="button">Source</button>
+      </div>
+      <div class="table-wrap">
+        <div class="table-head exp-table-head" style="grid-template-columns:minmax(140px,1.4fr) minmax(110px,1fr) minmax(110px,1fr) minmax(130px,1fr) 110px;min-width:640px;">
+          <div>Origin</div><div>Login</div><div>Password</div><div>Posted</div><div>Source</div>
+        </div>
+        <div id="ipExposureTableBody"></div>
+      </div>
+      <div class="actions">
+        <button class="btn red-btn" id="ipExposureBtnCopy" type="button">&#x2398; <span id="ipExposureLblCopy">Copy Hits</span></button>
+        <button class="btn" id="ipExposureBtnTxt" type="button">&#x2913; <span id="ipExposureLblTxt">Download TXT</span></button>
+        <button class="btn" id="ipExposureBtnJson" type="button">&#x2913; <span>Export JSON</span></button>
+        <button class="btn" id="ipExposureBtnCsv" type="button">&#x2913; <span>Export CSV</span></button>
+        <button class="btn" id="ipExposureBtnNew" type="button">&#x21BA; New Search</button>
+      </div>
+    </div>
+  </div>
+
   <div class="tool-panel" id="toolIp">
     <div class="panel input-section">
       <div class="divider"><div class="divider-label">IP / Host Lookup</div></div>
@@ -864,6 +947,7 @@ footer.footer{position:fixed;bottom:0;left:0;right:0;height:48px;display:flex;al
 <script src="/app.js" defer></script>
 <script src="/email-tool.js" defer></script>
 <script src="/exposure-tool.js" defer></script>
+<script src="/ip-exposure-tool.js" defer></script>
 <script src="/ip-tool.js" defer></script>
 <script src="/domain-tool.js" defer></script>
 <script src="/username-tool.js" defer></script>
