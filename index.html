@@ -63,10 +63,13 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;opac
 .hero-chip{font-family:'IBM Plex Mono',monospace;font-size:.62rem;letter-spacing:.1em;text-transform:uppercase;color:var(--text-faint);padding:8px 12px;border:1px solid var(--border);background:rgba(255,255,255,.015)}
 .hero-chip b{color:var(--text-muted);font-weight:500}
 /* tool nav */
-.tool-nav{display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap}
-.tool-tab{font-family:'IBM Plex Mono',monospace;font-size:.68rem;letter-spacing:.1em;text-transform:uppercase;padding:12px 18px;border:1px solid var(--border);background:rgba(255,255,255,.01);color:var(--text-faint);cursor:pointer;transition:all .25s var(--ease-out);min-height:44px}
-.tool-tab:hover{border-color:var(--text-muted);color:var(--text-muted)}
-.tool-tab.active{background:#fff;color:#000;border-color:#fff;font-weight:600}
+.tool-nav{display:flex;gap:2px;margin-bottom:24px;border-bottom:1px solid var(--border);overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.tool-nav::-webkit-scrollbar{display:none}
+.tool-tab{font-family:'IBM Plex Mono',monospace;font-size:.68rem;letter-spacing:.08em;text-transform:uppercase;padding:14px 16px;background:transparent;border:none;border-bottom:2px solid transparent;color:var(--text-faint);cursor:pointer;transition:all .2s var(--ease-out);white-space:nowrap;min-height:44px;margin-bottom:-1px;position:relative}
+.tool-tab:hover{color:var(--text-muted)}
+.tool-tab.active{color:#fff;border-bottom-color:#fff;font-weight:600}
+.tool-tab::after{content:'';position:absolute;left:16px;right:16px;bottom:-1px;height:1px;background:var(--border);transform:scaleX(0);transform-origin:left;transition:transform .3s var(--ease-out)}
+.tool-tab.active::after{display:none}
 .tool-panel{display:none}.tool-panel.active{display:block}
 /* panel */
 .panel{background:linear-gradient(180deg,rgba(255,255,255,.03),rgba(255,255,255,.01));border:1px solid var(--border);padding:clamp(20px,3vw,32px);box-shadow:var(--shadow);backdrop-filter:blur(2px)}
@@ -321,14 +324,14 @@ footer.footer{position:fixed;bottom:0;left:0;right:0;height:48px;display:flex;al
   </div>
 
   <div class="tool-nav" id="toolNav">
-    <button class="tool-tab active" id="toolTabGithub" type="button" data-tool="github">GitHub Scanner</button>
-    <button class="tool-tab" id="toolTabEmail" type="button" data-tool="email">Email Footprint</button>
-    <button class="tool-tab" id="toolTabExposure" type="button" data-tool="exposure">Exposure Search</button>
+    <button class="tool-tab active" id="toolTabGithub" type="button" data-tool="github">GitHub</button>
+    <button class="tool-tab" id="toolTabEmail" type="button" data-tool="email">Email</button>
+    <button class="tool-tab" id="toolTabExposure" type="button" data-tool="exposure">Exposure</button>
     <button class="tool-tab" id="toolTabIpExposure" type="button" data-tool="ipExposure">IP Exposure</button>
-    <button class="tool-tab" id="toolTabIp" type="button" data-tool="ip">IP / Host Lookup</button>
-    <button class="tool-tab" id="toolTabDomain" type="button" data-tool="domain">Domain Lookup</button>
-    <button class="tool-tab" id="toolTabUsername" type="button" data-tool="username">Username Search</button>
-    <button class="tool-tab" id="toolTabHistory" type="button" data-tool="history">Activity Log</button>
+    <button class="tool-tab" id="toolTabIp" type="button" data-tool="ip">IP / Host</button>
+    <button class="tool-tab" id="toolTabDomain" type="button" data-tool="domain">Domain</button>
+    <button class="tool-tab" id="toolTabUsername" type="button" data-tool="username">Username</button>
+    <button class="tool-tab" id="toolTabHistory" type="button" data-tool="history">Activity</button>
   </div>
 
   <div class="tool-panel active" id="toolGithub">
