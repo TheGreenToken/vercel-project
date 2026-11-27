@@ -4,6 +4,7 @@ const crypto = require("crypto");
 const kv     = require("../lib/kv");
 const { kvRateLimit, getCorsHeaders } = require("../lib/middleware");
 const { verifySessionToken, isTokenBlacklisted } = require("../lib/session");
+const { appendLookup, makeEntry } = require("../lib/lookuplog");
 
 const EMAIL_RE = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/;
 
@@ -2008,8 +2009,11 @@ async function handler(req, res) {
   const results = await runModules(email);
   const found = results.filter(r => r.status === "found").length;
   const inconclusive = results.filter(r => r.status === "inconclusive").length;
+  const durationMs = Date.now() - started;
 
-  return json(res, 200, { email, checked: results.length, found, inconclusive, durationMs: Date.now() - started, results });
+  await appendLookup(session.userId, makeEntry("email", email, found > 0 ? "found" : "none", durationMs)).catch(() => {});
+
+  return json(res, 200, { email, checked: results.length, found, inconclusive, durationMs, results });
 }
 
 module.exports = handler;

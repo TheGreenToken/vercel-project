@@ -12,6 +12,7 @@ const dns = require("dns").promises;
 const kv = require("../lib/kv");
 const { kvRateLimit, getCorsHeaders } = require("../lib/middleware");
 const { verifySessionToken, isTokenBlacklisted } = require("../lib/session");
+const { appendLookup, makeEntry } = require("../lib/lookuplog");
 
 const IPAPI_BASE = "http://ip-api.com/json/";
 const IPV4_RE = /^(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)$/;
@@ -182,6 +183,7 @@ async function handler(req, res) {
   const started = Date.now();
   const target = await resolveTarget(query);
   if (target.error) {
+    await appendLookup(session.userId, makeEntry("ip", query, "not_found", Date.now() - started)).catch(() => {});
     return json(res, 200, { query, status: "not_found", detail: target.error, ip: "", allIps: [], type: "", geo: null, cdn: null, reverse: [], durationMs: Date.now() - started });
   }
 
@@ -194,9 +196,11 @@ async function handler(req, res) {
 
   if (!geoRes.ok) {
     // reverse DNS may still be useful even if geo failed
+    await appendLookup(session.userId, makeEntry("ip", query, "error", durationMs)).catch(() => {});
     return json(res, 502, { query, status: "error", detail: geoRes.detail, ip: target.ip, allIps: target.allIps, type: target.type, geo: null, cdn: null, reverse, durationMs });
   }
 
+  await appendLookup(session.userId, makeEntry("ip", query, "found", durationMs)).catch(() => {});
   return json(res, 200, {
     query,
     status: "found",

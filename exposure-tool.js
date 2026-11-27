@@ -187,6 +187,7 @@
       setProgress(100, 'Complete');
       log(`Done: ${currentHits.length} hit(s) in ${data.durationMs}ms`, currentHits.length ? 'hit' : 'ok');
       resultsBlock.classList.add('show');
+      try { window.dispatchEvent(new CustomEvent('mono:lookup-done', { detail: { tool: 'exposure', query: email, status: data.status } })); } catch (_) {}
       saveHistory({ email, hits: data.hitCount || 0, total: data.total || 0, ts: Date.now() });
       loadHistory();
     } catch (e) {

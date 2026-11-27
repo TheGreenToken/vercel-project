@@ -235,6 +235,7 @@
       log(`Done: ${data.status} in ${data.durationMs}ms`, data.status === 'found' ? 'hit' : 'ok');
       renderResults();
       resultsBlock.classList.add('show');
+      try { window.dispatchEvent(new CustomEvent('mono:lookup-done', { detail: { tool: 'ip', query: data.status === 'found' ? data.ip : query, status: data.status } })); } catch (_) {}
     } catch (e) {
       showError(e.message || 'IP lookup failed', 'Check your connection and try again.');
       setProgress(100, 'Failed');

@@ -8,11 +8,12 @@
 
   // ---- Tool tab router ----
   const tabs = Array.from(document.querySelectorAll('.tool-tab[data-tool]'));
-  const panels = { github: $('toolGithub'), email: $('toolEmail'), exposure: $('toolExposure'), ip: $('toolIp'), domain: $('toolDomain'), username: $('toolUsername') };
+  const panels = { github: $('toolGithub'), email: $('toolEmail'), exposure: $('toolExposure'), ip: $('toolIp'), domain: $('toolDomain'), username: $('toolUsername'), history: $('toolHistory') };
   function activateTool(name) {
     tabs.forEach(t => t.classList.toggle('active', t.dataset.tool === name));
     Object.entries(panels).forEach(([k, el]) => { if (el) el.classList.toggle('active', k === name); });
     try { localStorage.setItem('mono_tool', name); } catch (_) {}
+    try { window.dispatchEvent(new CustomEvent('mono:tool-activated', { detail: name })); } catch (_) {}
   }
   tabs.forEach(t => t.addEventListener('click', () => activateTool(t.dataset.tool)));
   try { const saved = localStorage.getItem('mono_tool'); if (saved && panels[saved]) activateTool(saved); } catch (_) {}
@@ -212,6 +213,7 @@
       setProgress(100, 'Complete');
       log(`Done: ${data.found}/${data.checked} found in ${data.durationMs}ms`, 'hit');
       resultsBlock.classList.add('show');
+      try { window.dispatchEvent(new CustomEvent('mono:lookup-done', { detail: { tool: 'email', query: email, status: (data.found > 0) ? 'found' : 'none' } })); } catch (_) {}
       saveHistory({ email, found: data.found || 0, checked: data.checked || 0, ts: Date.now() });
       loadHistory();
     } catch (e) {

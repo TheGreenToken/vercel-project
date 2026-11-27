@@ -17,6 +17,9 @@
     },
     "api/username-check.js": {
       "maxDuration": 60
+    },
+    "api/lookup-history.js": {
+      "maxDuration": 15
     }
   },
   "rewrites": [
