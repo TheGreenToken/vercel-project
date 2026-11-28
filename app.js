@@ -671,9 +671,11 @@
   function flashBtn(btnId, label) {
     const btn = document.getElementById(btnId);
     if (!btn) return;
-    const orig = btn.textContent;
-    btn.textContent = label;
-    setTimeout(function () { btn.textContent = orig; }, 2000);
+    const span = btn.querySelector('span');
+    const target = span || btn;
+    const orig = target.textContent;
+    target.textContent = label;
+    setTimeout(function () { target.textContent = orig; }, 2000);
   }
 
   window.addEventListener('DOMContentLoaded', function () {

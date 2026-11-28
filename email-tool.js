@@ -247,16 +247,19 @@
     const lines = [`Email: ${currentEmail}`, `Found: ${currentResults.filter(r=>r.status==='found').length}/${currentResults.length}`, '', ...currentResults.map(r=>`${r.name}\t${statusLabel(r.status)}\t${r.detail||''}`)];
     const blob = new Blob([lines.join('\n')], {type:'text/plain'});
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `mono-email-${currentEmail.replace(/[^a-z0-9]/gi,'_')}.txt`; a.click(); URL.revokeObjectURL(a.href);
+    if (window.monoUI) window.monoUI.toast('Downloaded TXT report');
   });
   $('emailBtnJson').addEventListener('click', () => {
     const blob = new Blob([JSON.stringify({email:currentEmail, results:currentResults}, null, 2)], {type:'application/json'});
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `mono-email-${currentEmail.replace(/[^a-z0-9]/gi,'_')}.json`; a.click(); URL.revokeObjectURL(a.href);
+    if (window.monoUI) window.monoUI.toast('Downloaded JSON report');
   });
   $('emailBtnCsv').addEventListener('click', () => {
     const escCsv = (v) => '"' + String(v||'').replace(/"/g,'""') + '"';
     const rows = [['service','status','detail','category'], ...currentResults.map(r=>[r.name,statusLabel(r.status),r.detail||'',r.category||''])];
     const blob = new Blob([rows.map(r=>r.map(escCsv).join(',')).join('\n')], {type:'text/csv'});
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `mono-email-${currentEmail.replace(/[^a-z0-9]/gi,'_')}.csv`; a.click(); URL.revokeObjectURL(a.href);
+    if (window.monoUI) window.monoUI.toast('Downloaded CSV report');
   });
 
   loadHistory();
