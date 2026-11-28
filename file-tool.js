@@ -22,6 +22,7 @@
   const meta = $('fileMeta');
   const resultsCount = $('fileResultsCount');
   const gridBody = $('fileGridBody');
+  const highlights = $('fileHighlights');
   const stat1 = $('fileStat1');
   const stat2 = $('fileStat2');
 
@@ -75,7 +76,15 @@
     push('File type', d.fileType);
     push('Extension', d.fileExt ? '.' + d.fileExt : '—');
     push('Size', d.sizeHuman);
-    push('SHA-256', d.sha256, 'mono-break');
+    // hash fingerprints
+    if (d.hashes) {
+      push('MD5', d.hashes.md5, 'mono-break');
+      push('SHA-1', d.hashes.sha1, 'mono-break');
+      push('SHA-256', d.hashes.sha256, 'mono-break');
+      push('SHA-384', d.hashes.sha384, 'mono-break');
+      push('SHA-512', d.hashes.sha512, 'mono-break');
+      push('CRC32', d.hashes.crc32);
+    }
     const m = d.metadata || {};
     if (d.fileType === 'image' && m) {
       push('Camera Make', m.cameraMake);
@@ -114,13 +123,48 @@
       push('Pages', m.pageCount);
       push('PDF Version', m.pdfVersion);
       push('Encrypted', m.encryption != null ? String(m.encryption) : '—');
+    } else if ((d.fileType === 'office' || d.fileType === 'epub') && m) {
+      push('Title', m.title);
+      push('Author', m.author);
+      push('Subject', m.subject);
+      push('Keywords', m.keywords);
+      push('Last Modified By', m.creator);
+      push('Created', m.created);
+      push('Modified', m.modified);
+      push('Application', m.application);
+      push('Company', m.company);
+      push('Format', m.format);
+    } else if (d.fileType === 'archive' && m) {
+      push('File Count', m.fileCount);
+      push('Total Uncompressed', m.totalUncompressedHuman);
+      if (m.files && m.files.length) {
+        push('Contents', m.files.map(f => f.name).join(', '), 'mono-break');
+      }
+    } else if (d.fileType === 'video' && m) {
+      push('Duration', m.duration);
+      push('Dimensions', m.dimensions);
+      push('Video Codec', m.videoCodec);
+      push('Audio Codec', m.audioCodec);
+      push('Created', m.creationDate);
+      push('Modified', m.modifiedDate);
+      push('Timescale', m.timescale);
+    } else if (d.fileType === 'audio' && m) {
+      push('Format', m.format);
+      push('Title', m.title);
+      push('Artist', m.artist);
+      push('Album', m.album);
+      push('Album Artist', m.albumArtist);
+      push('Year', m.year);
+      push('Genre', m.genre);
+      push('Track', m.track);
+      push('Comment', m.comment);
     }
     return cells;
   }
 
   function renderResults() {
     const d = currentData;
-    if (!d) { gridBody.innerHTML = ''; resultsCount.textContent = ''; return; }
+    if (!d) { gridBody.innerHTML = ''; resultsCount.textContent = ''; highlights.innerHTML = ''; return; }
     const cells = buildCells(d);
     gridBody.innerHTML = '';
     cells.forEach(c => {
@@ -133,28 +177,45 @@
       gridBody.appendChild(cell);
     });
 
+    // intelligence highlights
+    highlights.innerHTML = '';
+    if (d.highlights && d.highlights.length) {
+      d.highlights.forEach(h => {
+        const b = document.createElement('span');
+        b.className = 'badge';
+        b.textContent = san(h, 80);
+        highlights.appendChild(b);
+      });
+    }
+
+    // GPS map link
     const m = d.metadata || {};
-    const extras = [];
     if (m.gpsMap) {
       const lat = m.latitude, lon = m.longitude;
       const mapLink = `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=15/${lat}/${lon}`;
-      extras.push({ label: '📍 Open on Map', value: `<a class="map-link" href="${esc(mapLink)}" target="_blank" rel="noopener noreferrer">openstreetmap.org</a>`, html: true });
-    }
-    if (d.fileType === 'image' && !m.gpsMap) {
-      // note when image has no location
-    }
-    extras.forEach(c => {
       const cell = document.createElement('div');
       cell.className = 'ip-cell';
       cell.style.gridColumn = '1/-1';
       cell.innerHTML = `
-        <div class="ip-cell-label">${esc(c.label)}</div>
-        <div class="ip-cell-val">${c.value}</div>
+        <div class="ip-cell-label">📍 Open on Map</div>
+        <div class="ip-cell-val"><a class="map-link" href="${esc(mapLink)}" target="_blank" rel="noopener noreferrer">openstreetmap.org</a></div>
       `;
       gridBody.appendChild(cell);
-    });
+    }
 
-    const fieldCount = cells.length + extras.length;
+    // archive contents as badges
+    if (d.fileType === 'archive' && m.files && m.files.length) {
+      const cell = document.createElement('div');
+      cell.className = 'ip-cell';
+      cell.style.gridColumn = '1/-1';
+      cell.innerHTML = `
+        <div class="ip-cell-label">Archive Contents</div>
+        <div class="badge-row">${m.files.map(f => '<span class="badge">' + esc(f.name) + '</span>').join('')}</div>
+      `;
+      gridBody.appendChild(cell);
+    }
+
+    const fieldCount = cells.length + (m.gpsMap ? 1 : 0) + (d.fileType === 'archive' && m.files && m.files.length ? 1 : 0);
     resultsCount.textContent = `${fieldCount} fields extracted`;
   }
 
@@ -198,10 +259,21 @@
       const bits = [data.fileType, data.sizeHuman];
       if (data.fileType === 'image' && m) bits.push(m.dimensions ? m.dimensions : 'image');
       if (data.fileType === 'pdf' && m) bits.push(m.pageCount + ' pages');
+      if (data.fileType === 'office' && m) bits.push(m.application || 'office doc');
+      if (data.fileType === 'archive' && m) bits.push(m.fileCount + ' files');
+      if (data.fileType === 'video' && m) bits.push(m.duration || 'video');
+      if (data.fileType === 'audio' && m) bits.push(m.artist || 'audio');
       if (m.gpsMap) bits.push('GPS tracked');
       meta.textContent = bits.filter(Boolean).join(' · ');
-      stat1.textContent = data.fileType === 'image' ? 'Image' : data.fileType === 'pdf' ? 'PDF' : (data.fileType || '—');
+      // type label for stats
+      const typeLabel = { image:'Image', pdf:'PDF', office:'Office', epub:'EPUB', archive:'Archive', video:'Video', audio:'Audio', svg:'SVG', xml:'XML' }[data.fileType] || data.fileType || '—';
+      stat1.textContent = typeLabel;
       stat2.textContent = data.sizeHuman;
+      // thumbnail into the avatar slot
+      const avatar = $('fileAvatar');
+      if (data.thumbnail && avatar) {
+        avatar.innerHTML = `<img src="${esc(data.thumbnail)}" alt="preview" style="width:100%;height:100%;object-fit:cover;border-radius:6px;" />`;
+      }
       setProgress(100, 'Complete');
       log(`Done: ${data.status} in ${data.durationMs}ms`, 'hit');
       renderResults();
@@ -246,6 +318,8 @@
     progressBlock.classList.remove('show');
     clearError();
     setFile(null);
+    const avatar = $('fileAvatar');
+    if (avatar) avatar.innerHTML = 'FILE';
     dropZone.focus();
   });
 
@@ -279,6 +353,15 @@
     const blob = new Blob([JSON.stringify(currentData, null, 2)], {type:'application/json'});
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `mono-file-${currentData.filename.replace(/[^a-z0-9]/gi,'_')}.json`; a.click(); URL.revokeObjectURL(a.href);
     if (window.monoUI) window.monoUI.toast('Downloaded JSON report');
+  });
+  $('fileBtnCsv').addEventListener('click', () => {
+    if (!currentData) return;
+    const rows = [['Field', 'Value']];
+    buildCells(currentData).forEach(c => rows.push([c.label, c.value.replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&#x27;/g,"'")]));
+    const csv = rows.map(r => r.map(v => '"' + String(v).replace(/"/g, '""') + '"').join(',')).join('\n');
+    const blob = new Blob([csv], {type:'text/csv'});
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `mono-file-${currentData.filename.replace(/[^a-z0-9]/gi,'_')}.csv`; a.click(); URL.revokeObjectURL(a.href);
+    if (window.monoUI) window.monoUI.toast('Downloaded CSV report');
   });
 
   // support keyboard: Enter on dropzone opens picker
