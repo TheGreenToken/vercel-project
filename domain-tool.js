@@ -190,10 +190,12 @@
     const lines = [`Domain: ${currentQuery}`, `Status: ${currentData.status}`, '', ...buildCells(currentData).map(c => `${c.label}\t${c.value}`)];
     const blob = new Blob([lines.join('\n')], {type:'text/plain'});
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `mono-domain-${currentQuery.replace(/[^a-z0-9]/gi,'_')}.txt`; a.click(); URL.revokeObjectURL(a.href);
+    if (window.monoUI) window.monoUI.toast('Downloaded TXT report');
   });
   $('domainBtnJson').addEventListener('click', () => {
     if (!currentData) return;
     const blob = new Blob([JSON.stringify(currentData, null, 2)], {type:'application/json'});
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `mono-domain-${currentQuery.replace(/[^a-z0-9]/gi,'_')}.json`; a.click(); URL.revokeObjectURL(a.href);
+    if (window.monoUI) window.monoUI.toast('Downloaded JSON report');
   });
 })();

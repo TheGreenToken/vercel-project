@@ -64,6 +64,20 @@
     return currentHits;
   }
 
+  function showSkeleton() {
+    const rows = [];
+    for (let i = 0; i < 5; i++) {
+      rows.push(`
+        <div class="exp-row" style="min-width:unset;grid-template-columns:1fr;">
+          <div class="skel" style="height:14px;width:80%;"></div>
+          <div class="skel" style="height:12px;width:60%;margin-top:8px;"></div>
+          <div class="skel" style="height:12px;width:70%;margin-top:8px;"></div>
+        </div>`);
+    }
+    tableBody.innerHTML = rows.join('');
+    resultsCount.textContent = 'Loading…';
+  }
+
   function renderResults() {
     const all = filteredHits();
     const rows = all.slice(0, renderedCount);
@@ -139,6 +153,7 @@
       log('Requesting IP exposure search results...', 'ok');
       let fake = 30;
       const timer = setInterval(() => { fake = Math.min(80, fake + 2); setProgress(fake, 'Looking up hits...'); }, 700);
+      showSkeleton();
       let res, text;
       const pages = 20;
       try {
@@ -199,6 +214,7 @@
 
   function copyText(text, lblId) {
     navigator.clipboard.writeText(text).then(() => {
+      if (window.monoUI) window.monoUI.flashBtn(lblId, 'Copied!');
       const el = $(lblId); if (!el) return; const old = el.textContent; el.textContent = 'Copied!'; setTimeout(() => el.textContent = old, 1400);
     }).catch(() => {});
   }
@@ -210,15 +226,18 @@
     const lines = [`IP: ${currentIp}`, `Hits: ${currentHits.length}`, `In index: ${totalCount.textContent}`, '', ...currentHits.map(h=>`${h.origin}\t${h.login}\t${h.password}\t${h.posted}\t${h.source}`)];
     const blob = new Blob([lines.join('\n')], {type:'text/plain'});
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `mono-ip-exposure-${currentIp.replace(/[^a-z0-9]/gi,'_')}.txt`; a.click(); URL.revokeObjectURL(a.href);
+    if (window.monoUI) window.monoUI.toast('Downloaded TXT report');
   });
   $('ipExposureBtnJson').addEventListener('click', () => {
     const blob = new Blob([JSON.stringify({ip:currentIp, total: totalCount.textContent, hits:currentHits}, null, 2)], {type:'application/json'});
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `mono-ip-exposure-${currentIp.replace(/[^a-z0-9]/gi,'_')}.json`; a.click(); URL.revokeObjectURL(a.href);
+    if (window.monoUI) window.monoUI.toast('Downloaded JSON report');
   });
   $('ipExposureBtnCsv').addEventListener('click', () => {
     const escCsv = (v) => '"' + String(v||'').replace(/"/g,'""') + '"';
     const rows = [['origin','login','password','posted','source'], ...currentHits.map(h=>[h.origin,h.login,h.password,h.posted,h.source])];
     const blob = new Blob([rows.map(r=>r.map(escCsv).join(',')).join('\n')], {type:'text/csv'});
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `mono-ip-exposure-${currentIp.replace(/[^a-z0-9]/gi,'_')}.csv`; a.click(); URL.revokeObjectURL(a.href);
+    if (window.monoUI) window.monoUI.toast('Downloaded CSV report');
   });
 })();
